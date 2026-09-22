@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Turn video and audio into timestamped text on your own Windows computer. Transcribe Me includes Whisper base multilingual and exports TXT, SRT, and VTT.">
+  <meta name="color-scheme" content="light dark">
+  <title>Transcribe Me · Your video. Your words. Your computer.</title>
+  <script>
+    (() => {
+      const param = new URLSearchParams(window.location.search).get("scoutTheme");
+      const theme = param === "dark" || param === "light" ? param : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      document.documentElement.setAttribute("data-theme", theme);
+    })();
+  </script>
+  <style>
+    :root {
+      color-scheme: light;
+      --cp-bg: #f5f7fb;
+      --cp-bg-elevated: #fbfbfd;
+      --cp-surface: #ffffff;
+      --cp-surface-soft: #f1f4f9;
+      --cp-border: #d0dae6;
+      --cp-border-strong: #94a3b8;
+      --cp-text: #0f172a;
+      --cp-text-muted: #475569;
+      --cp-text-soft: #64748b;
+      --cp-accent: #2563eb;
+      --cp-accent-hover: #1d4ed8;
+      --cp-accent-soft: rgba(37, 99, 235, 0.08);
+      --cp-accent-fg: #ffffff;
+      --cp-success: #16a34a;
+      --cp-danger: #dc2626;
+      --cp-warning: #b45309;
+      --cp-link: #1d4ed8;
+      --cp-shadow: 0 18px 48px rgba(15, 23, 42, 0.12);
+      --cp-overlay: rgba(255, 255, 255, 0.8);
+      --cp-panel: rgba(255, 255, 255, 0.86);
+      --cp-panel-strong: rgba(255, 255, 255, 0.96);
+      --cp-sheen: rgba(255, 255, 255, 0.55);
+      --cp-highlight: rgba(37, 99, 235, 0.12);
+    }
+    html[data-theme="dark"] {
+      color-scheme: dark;
+      --cp-bg: #0b1220;
+      --cp-bg-elevated: #0f172a;
+      --cp-surface: #111c31;
+      --cp-surface-soft: #101a2c;
+      --cp-border: #1e293b;
+      --cp-border-strong: #334155;
+      --cp-text: #f1f5f9;
+      --cp-text-muted: #94a3b8;
+      --cp-text-soft: #cbd5e1;
+      --cp-accent: #60a5fa;
+      --cp-accent-hover: #93c5fd;
+      --cp-accent-soft: rgba(96, 165, 250, 0.16);
+      --cp-accent-fg: #0b1220;
+      --cp-success: #4ade80;
+      --cp-danger: #f87171;
+      --cp-warning: #fbbf24;
+      --cp-link: #93c5fd;
+      --cp-shadow: 0 18px 48px rgba(0, 0, 0, 0.42);
+      --cp-overlay: rgba(15, 23, 42, 0.88);
+      --cp-panel: rgba(17, 28, 49, 0.72);
+      --cp-panel-strong: rgba(17, 28, 49, 0.96);
+      --cp-sheen: rgba(255, 255, 255, 0.04);
+      --cp-highlight: rgba(96, 165, 250, 0.14);
+    }
+    :root {
+      font-family: "Segoe UI", Aptos, Calibri, -apple-system, BlinkMacSystemFont, sans-serif;
+      font-synthesis: none;
+      --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 20px; --space-6: 24px; --space-8: 32px; --space-10: 40px; --space-12: 48px; --space-16: 64px; --space-20: 80px;
+      --radius: 0.625rem;
+      --mono: Consolas, "Courier New", Courier, monospace;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--cp-bg); color: var(--cp-text); }
+    a { color: var(--cp-accent); text-underline-offset: 4px; }
+    a:hover { color: var(--cp-accent-hover); }
+    a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--cp-accent); outline-offset: 5px; }
+    h1, h2, h3, p { margin: 0; }
+    button { font: inherit; }
+    .container { width: min(1200px, 100% - var(--space-16)); margin-inline: auto; }
+    .site-header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-6); min-height: 104px; border-bottom: 1px solid var(--cp-border); }
+    .brand { display: inline-flex; align-items: center; gap: var(--space-3); color: var(--cp-text); text-decoration: none; font-size: 22px; font-weight: 650; letter-spacing: -0.7px; }
+    .brand svg { color: var(--cp-accent); width: 32px; height: 32px; }
+    .brand-light { font-weight: 400; }
+    .header-tools { display: flex; gap: var(--space-6); align-items: center; font-size: 12px; color: var(--cp-text-muted); }
+    .theme { border: 1px solid var(--cp-border); color: var(--cp-text-muted); background: transparent; border-radius: var(--radius); padding: var(--space-2) var(--space-3); cursor: pointer; }
+    .theme:hover { background: var(--cp-bg-elevated); }
+    .hero { display: grid; grid-template-columns: 1fr 1.08fr; align-items: center; gap: var(--space-16); padding: var(--space-20) 0; }
+    .eyebrow { text-transform: uppercase; letter-spacing: 0.12em; font-size: 11px; font-weight: 600; color: var(--cp-text-soft); }
+    h1 { font-size: clamp(46px, 5.6vw, 70px); font-weight: 600; line-height: 1.04; letter-spacing: -3px; margin: var(--space-6) 0; }
+    h1 span { display: block; }
+    h1 .accent { color: var(--cp-accent); }
+    .intro { max-width: 380px; font-size: 17px; line-height: 1.8; color: var(--cp-text-muted); }
+    .download { display: inline-flex; gap: var(--space-6); align-items: center; padding: var(--space-4) var(--space-5); background: var(--cp-accent); color: var(--cp-accent-fg); font-size: 14px; font-weight: 600; text-decoration: none; border-radius: var(--radius); margin-top: var(--space-8); }
+    .download:hover { background: var(--cp-accent-hover); color: var(--cp-accent-fg); }
+    .download svg { width: 18px; height: 18px; }
+    .download-detail { font-size: 11px; color: var(--cp-text-soft); line-height: 1.8; margin-top: var(--space-3); }
+    .download-detail a { color: var(--cp-text-muted); }
+    .unsigned { max-width: 400px; color: var(--cp-text-muted); font-size: 11px; line-height: 1.7; margin-top: var(--space-4); }
+    .artifact { min-width: 0; }
+    .artifact-label { margin: 0 0 var(--space-3) var(--space-1); display: flex; justify-content: space-between; gap: var(--space-4); font-size: 10px; color: var(--cp-text-soft); letter-spacing: 0.08em; text-transform: uppercase; }
+    .example { border: 1px solid var(--cp-border); border-radius: 16px; overflow: hidden; background: var(--cp-surface); }
+    .example-header { padding: var(--space-6) var(--space-8); border-bottom: 1px solid var(--cp-border); background: var(--cp-bg-elevated); }
+    .example-header h2 { font-size: 17px; font-weight: 600; letter-spacing: -0.3px; margin-top: var(--space-2); }
+    .example-header p:last-child { color: var(--cp-text-muted); font-size: 11px; margin-top: var(--space-2); }
+    .transcript { padding: var(--space-8) var(--space-6) var(--space-3); }
+    .segment { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: var(--space-4); }
+    .stamp { font-family: var(--mono); font-size: 10px; color: var(--cp-text-soft); padding-top: 6px; font-variant-numeric: tabular-nums; }
+    .segment p { border-left: 1px solid var(--cp-border); padding: 0 0 var(--space-6) var(--space-5); font-size: 15px; line-height: 1.8; }
+    .segment:first-child p { border-color: var(--cp-accent); }
+    .segment:last-child p { padding-bottom: var(--space-3); }
+    .example-footer { border-top: 1px solid var(--cp-border); display: flex; gap: var(--space-4); justify-content: space-between; padding: var(--space-4) var(--space-6); font-size: 10px; color: var(--cp-text-soft); }
+    .example-footer .formats { color: var(--cp-text); font-family: var(--mono); letter-spacing: 0.05em; white-space: nowrap; }
+    .workflow { display: grid; grid-template-columns: 1fr 1.08fr; gap: var(--space-16); border-block: 1px solid var(--cp-border); padding: var(--space-10) 0; }
+    .workflow h2 { font-size: 25px; letter-spacing: -0.7px; font-weight: 500; line-height: 1.35; }
+    .workflow > div > p { margin-top: var(--space-3); color: var(--cp-text-muted); font-size: 14px; line-height: 1.8; max-width: 380px; }
+    .workflow ol { margin: 0; padding-left: var(--space-5); display: grid; gap: var(--space-3); color: var(--cp-text-muted); font-size: 13px; line-height: 1.8; }
+    .workflow li { padding-left: var(--space-2); }
+    .workflow li::marker { font-family: var(--mono); color: var(--cp-accent); font-size: 11px; }
+    .workflow strong { color: var(--cp-text); font-weight: 600; }
+    .reference { display: grid; grid-template-columns: 1fr 1.08fr; gap: var(--space-16); padding: var(--space-12) 0 var(--space-16); }
+    .reference h2 { font-size: 16px; font-weight: 600; margin-bottom: var(--space-5); }
+    .requirements { display: grid; grid-template-columns: 82px 1fr; gap: var(--space-3) var(--space-4); font-size: 12px; line-height: 1.7; margin: 0; }
+    .requirements dt { color: var(--cp-text-soft); }
+    .requirements dd { margin: 0; color: var(--cp-text); }
+    .requirement-note { color: var(--cp-text-muted); font-size: 11px; line-height: 1.8; margin-top: var(--space-5); max-width: 390px; }
+    details { border-top: 1px solid var(--cp-border); }
+    details:last-child { border-bottom: 1px solid var(--cp-border); }
+    summary { padding-block: var(--space-4); cursor: pointer; font-size: 13px; font-weight: 500; }
+    details p { font-size: 12px; line-height: 1.8; color: var(--cp-text-muted); padding: 0 var(--space-4) var(--space-4) 0; }
+    .site-footer { border-top: 1px solid var(--cp-border); display: flex; justify-content: space-between; gap: var(--space-6); padding: var(--space-6) 0 var(--space-8); color: var(--cp-text-soft); font-size: 11px; line-height: 1.8; }
+    .site-footer a { color: var(--cp-text-muted); }
+    .footer-links { display: flex; gap: var(--space-5); flex-wrap: wrap; }
+    @media (max-width: 960px) {
+      .hero, .workflow, .reference { gap: var(--space-8); }
+      .hero { padding-block: var(--space-12); }
+      h1 { font-size: 52px; letter-spacing: -2px; }
+      .segment { grid-template-columns: 52px 1fr; gap: var(--space-3); }
+      .transcript { padding-inline: var(--space-4); }
+      .segment p { padding-left: var(--space-3); }
+      .example-header { padding-inline: var(--space-5); }
+    }
+    @media (max-width: 740px) {
+      .container { width: calc(100% - var(--space-8)); }
+      .site-header { min-height: 80px; }
+      .header-tools > span { display: none; }
+      .hero, .workflow, .reference { grid-template-columns: 1fr; }
+      .hero { gap: var(--space-12); }
+      h1 { font-size: clamp(48px, 10vw, 70px); }
+      .intro { max-width: 500px; }
+      .artifact { max-width: 560px; }
+      .site-footer { flex-direction: column; gap: var(--space-3); }
+      .example-footer { flex-wrap: wrap; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="site-header">
+      <a href="./" class="brand" aria-label="Transcribe Me home"><svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M5 13v6m5-11v16m5-20v24m6-17h7m-7 5h7m-7 5h4" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg><span>transcribe<span class="brand-light"> me</span></span></a>
+      <div class="header-tools"><span>Made for your Windows desktop</span><button class="theme" id="theme" type="button" aria-label="Switch color theme">Dark</button></div>
+    </header>
+    <main>
+      <section class="hero" aria-labelledby="headline">
+        <div>
+          <p class="eyebrow">Local audio &amp; video transcription</p>
+          <h1 id="headline"><span>Your video.</span><span class="accent">Your words.</span><span>Your computer.</span></h1>
+          <p class="intro">Turn a recording into text you can read, search, and keep. Everything runs on your computer. Nothing goes to the cloud.</p>
+          <a class="download" href="downloads/TranscribeMe-0.1.0-windows-x64.zip" download>Download for Windows <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 17v4h14v-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+          <p class="download-detail">v0.1.0 · Portable x64 ZIP · Whisper base multilingual included<br><a href="downloads/SHA256SUMS.txt">SHA-256 checksums</a> · <a href="#requirements">System requirements</a></p>
+          <p class="unsigned">This build is unsigned. Windows may show an unrecognized publisher warning. Verify the download source and checksum, and follow your organization’s security policy.</p>
+        </div>
+        <div class="artifact">
+          <div class="artifact-label"><span>The transcript work surface</span><span>Illustrative example</span></div>
+          <section class="example" aria-label="Illustrative transcript, not a live recording">
+            <header class="example-header"><p class="eyebrow">Transcript</p><h2>A thought worth keeping.mp4</h2><p>Illustrative text · sample timestamps</p></header>
+            <div class="transcript">
+              <div class="segment"><span class="stamp">00:00:00</span><p>The useful part of a recording isn’t the file. It’s the thought you want to come back to.</p></div>
+              <div class="segment"><span class="stamp">00:00:08</span><p>A sentence from the conversation. The name you almost missed. The next thing to try.</p></div>
+              <div class="segment"><span class="stamp">00:00:15</span><p>Put the words next to a timestamp, and you have somewhere to start.</p></div>
+              <div class="segment"><span class="stamp">00:00:24</span><p>Read. Check. Keep what matters.</p></div>
+            </div>
+            <footer class="example-footer"><span>Text to keep. Captions to use.</span><span class="formats">TXT &nbsp; SRT &nbsp; VTT</span></footer>
+          </section>
+        </div>
+      </section>
+      <section class="workflow" aria-labelledby="workflow-heading">
+        <div><h2 id="workflow-heading">A recording in.<br>Something useful out.</h2><p>No account, API key, or model setup. The local engine and multilingual model come in the download.</p></div>
+        <ol>
+          <li><strong>Extract the whole ZIP.</strong> Keep its files together and open TranscribeMe.exe.</li>
+          <li><strong>Choose your recording.</strong> Detect the spoken language automatically, or select it yourself. Processing runs on your CPU.</li>
+          <li><strong>Review the words.</strong> Search timestamped segments, copy the text, or export TXT, SRT, or VTT. Your recent transcripts stay in the app.</li>
+        </ol>
+      </section>
+      <div class="reference">
+        <section id="requirements" aria-labelledby="requirements-heading">
+          <h2 id="requirements-heading">Before you download</h2>
+          <dl class="requirements">
+            <dt>Windows</dt><dd>Windows 10 22H2 or Windows 11, x64</dd>
+            <dt>Processor</dt><dd>x64 CPU with AVX2, FMA, F16C, and BMI2</dd>
+            <dt>Memory</dt><dd>4 GB minimum; 8 GB recommended</dd>
+            <dt>Recording</dt><dd>Up to 6 hours per file</dd>
+            <dt>Runtime</dt><dd>Microsoft Edge WebView2</dd>
+            <dt>Model</dt><dd>Whisper base multilingual, included</dd>
+          </dl>
+          <p class="requirement-note">WebView2 is normally preinstalled on supported Windows systems. If it is missing, installing it requires an internet connection. Transcription itself does not.</p>
+        </section>
+        <section aria-labelledby="questions-heading">
+          <h2 id="questions-heading">A few practical questions</h2>
+          <details id="privacy"><summary>Where do my recordings and transcripts go?</summary><p>Audio is processed locally, not uploaded to a transcription service. Transcripts are saved on this computer for the app’s history. Exports go to the location you choose. Anyone who can access your Windows account may be able to read these files. Copying text places it on the Windows clipboard; your Windows clipboard history or sync settings also apply.</p></details>
+          <details><summary>How long does transcription take?</summary><p>It depends on your recording and CPU. Long files can take longer than their playback time. Each file is limited to six hours to keep resource use bounded. You can watch progress or cancel processing. This release uses the bundled base multilingual model, not a cloud service or GPU accelerator.</p></details>
+          <details><summary>How accurate is the text?</summary><p>It is machine-generated, not a verified transcript. Noise, overlapping voices, music, accents, and silence can cause omissions or invented words. Check important names, numbers, and wording against the recording before sharing. Speaker identification is not included.</p></details>
+          <details><summary>Which file should I export?</summary><p>TXT is plain text for notes and documents. SRT and VTT include timestamps for caption tools and video players. Caption timing and wording may need review before publication.</p></details>
+          <details><summary>Does portable mean nothing is saved?</summary><p>No. You do not need to install the app itself, but it saves transcript history and preferences locally. Keep the full extracted application folder together; moving the executable alone leaves its engine and model behind.</p></details>
+        </section>
+      </div>
+    </main>
+    <footer class="site-footer"><span>Transcribe Me · Local words from local files.</span><nav class="footer-links" aria-label="Utility links"><a href="#requirements">Requirements</a><a href="#privacy">Privacy</a><a href="downloads/TranscribeMe-0.1.0-native-source.zip" download>Native source</a><a href="downloads/SHA256SUMS.txt">Checksums</a></nav></footer>
+  </div>
+  <script>
+    (() => {
+      const button = document.getElementById('theme');
+      const refresh = () => {
+        const dark = document.documentElement.dataset.theme === 'dark';
+        button.textContent = dark ? 'Light' : 'Dark';
+        button.setAttribute('aria-label', `Switch to ${dark ? 'light' : 'dark'} theme`);
+      };
+      button.addEventListener('click', () => {
+        document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+        refresh();
+      });
+      document.querySelector('a[href="#privacy"]').addEventListener('click', () => { document.getElementById('privacy').open = true; });
+      refresh();
+    })();
+  </script>
+</body>
+</html>
