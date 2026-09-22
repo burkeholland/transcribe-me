@@ -9,11 +9,13 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
     const requests: string[] = [];
     page.on('request', request => requests.push(request.url()));
     await page.setContent(await readFile(landing, 'utf8'));
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Your video.Your words.Your computer.');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Turn a recording into words.');
     await expect(page.getByRole('link', { name: 'Download for Windows' })).toHaveAttribute('href', 'downloads/TranscribeMe-0.1.0-windows-x64.zip');
     await expect(page.getByRole('link', { name: 'SHA-256 checksums' })).toHaveAttribute('href', 'downloads/SHA256SUMS.txt');
     await expect(page.getByRole('link', { name: 'Native source' })).toHaveAttribute('href', 'downloads/TranscribeMe-0.1.0-native-source.zip');
     await expect(page.getByText('Illustrative example', { exact: true })).toBeVisible();
+    await expect(page.getByText('Transcription complete', { exact: true })).toBeVisible();
+    await expect(page.getByText('Spoken language', { exact: true })).toBeVisible();
     await expect(page.getByText('Up to 6 hours per file', { exact: true })).toBeVisible();
     await expect(page.getByText('x64 CPU with AVX2, FMA, F16C, and BMI2', { exact: true })).toBeVisible();
     await expect(page.getByText(/This build is unsigned/)).toBeVisible();
