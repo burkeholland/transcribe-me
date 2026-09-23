@@ -53,7 +53,7 @@ app.innerHTML = `
           <ul id="history-list"></ul>
         </section>
         <div class="engine">${chipIcon}<span class="engine-text"><strong>Local Whisper</strong><span id="engine-label" role="status" aria-live="polite">Checking engine</span></span></div>
-        <p class="engine-meta"><span id="model">Whisper base multilingual</span> · <span id="version">v0.2.0</span></p>
+        <p class="engine-meta"><span id="model">Whisper base multilingual</span> · <span id="version">v0.3.0</span></p>
       </nav>
 
       <main class="picker" id="picker">
@@ -61,12 +61,12 @@ app.innerHTML = `
         <p class="lede">Turn your videos into text using a local Whisper model.</p>
         <section id="runtime-setup" class="runtime-setup" aria-labelledby="runtime-setup-title" hidden>
           <span class="runtime-setup-icon">${chipIcon}</span>
-          <h2 id="runtime-setup-title">Install the local engine</h2>
-          <p>Transcribe Me needs Whisper, FFmpeg, and two speech models. They are downloaded once and kept on this computer.</p>
+          <h2 id="runtime-setup-title">Download the speech models</h2>
+          <p>Whisper and FFmpeg are included. Download the Whisper base and voice activity models once to begin.</p>
           <p id="runtime-size" class="runtime-size"></p>
-          <button id="install-runtime" class="button-primary" type="button">${downloadIcon}<span id="install-runtime-label">Download and install</span></button>
+          <button id="install-runtime" class="button-primary" type="button">${downloadIcon}<span id="install-runtime-label">Download models</span></button>
           <div id="runtime-progress-line" class="runtime-progress-line" hidden>
-            <progress id="runtime-progress" max="100" aria-label="Engine download progress"></progress>
+            <progress id="runtime-progress" max="100" aria-label="Model download progress"></progress>
             <span id="runtime-progress-label"></span>
           </div>
           <p id="runtime-error" class="runtime-error" role="alert" hidden></p>
@@ -147,8 +147,8 @@ app.innerHTML = `
   <div id="browser-notice" class="browser-notice" hidden>
     <span class="logo">${logoIcon}</span>
     <h1>Desktop app required</h1>
-    <p>Transcribe Me uses a local Whisper engine installed by the Windows app. This browser page cannot open or transcribe your files.</p>
-    <p>Open <strong>TranscribeMe.exe</strong>. The app will offer to download its verified local engine before the first transcript.</p>
+    <p>Transcribe Me includes a local Whisper engine in the Windows app. This browser page cannot open or transcribe your files.</p>
+    <p>Open <strong>TranscribeMe.exe</strong>. The app will offer to download its verified speech models before the first transcript.</p>
   </div>`;
 
 function el<T extends HTMLElement = HTMLElement>(id: string): T {
@@ -454,8 +454,8 @@ el('dropzone').addEventListener('click', event => {
 el('install-runtime').addEventListener('click', () => {
   if (!bridge || busy() || disconnected) return;
   void action(async () => {
-    await bridge.InstallRuntime();
-    toast('The local transcription engine is ready.');
+    await bridge.InstallModels();
+    toast('The speech models are ready.');
   });
 });
 
@@ -607,9 +607,9 @@ function renderRuntime(): void {
   el('supports').hidden = showSetup;
   el('language-row').hidden = showSetup;
   el('install-runtime').hidden = active;
-  text('install-runtime-label', state === 'failed' ? 'Retry download' : 'Download and install');
+  text('install-runtime-label', state === 'failed' ? 'Retry download' : 'Download models');
   const installedSize = snapshot.runtimeTotalBytes > 0 ? fileSize(snapshot.runtimeTotalBytes) : '';
-  text('runtime-size', installedSize ? `Uses about ${installedSize} after installation.` : '');
+  text('runtime-size', installedSize ? `Downloads about ${installedSize} once.` : '');
   const progressLine = el('runtime-progress-line');
   progressLine.hidden = !active;
   if (active) {
@@ -637,14 +637,14 @@ async function poll(): Promise<void> {
     if (awaitingStart && next.job && next.job.id !== startPreviousJobID) awaitingStart = false;
     const engineLabel: Record<string, string> = {
       checking: 'Checking engine',
-      required: 'Download required',
-      downloading: `Downloading ${progressPercent(next.runtimeProgress || 0)}%`,
-      installing: 'Installing engine',
+      required: 'Models required',
+      downloading: `Downloading models ${progressPercent(next.runtimeProgress || 0)}%`,
+      installing: 'Installing models',
       failed: 'Setup failed',
       ready: 'Running offline',
     };
     text('engine-label', next.setupError ? 'Engine unavailable' : engineLabel[next.runtimeState] || 'Checking engine');
-    text('version', `v${next.version || '0.2.0'}`);
+    text('version', `v${next.version || '0.3.0'}`);
     text('model', next.modelName || 'Whisper base multilingual');
     const serviceError = next.setupError || (next.ready ? next.runtimeError : '');
     el('service-error').hidden = !serviceError;

@@ -83,8 +83,8 @@ func (a *App) Status() transcribe.Snapshot {
 	return a.service.Status()
 }
 
-func (a *App) InstallRuntime() error {
-	return a.service.InstallRuntime(a.ctx, transcribe.RuntimeArchiveURL())
+func (a *App) InstallModels() error {
+	return a.service.InstallModels(a.ctx)
 }
 
 func (a *App) ChooseFile() (*transcribe.FileInfo, error) {

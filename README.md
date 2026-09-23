@@ -2,20 +2,20 @@
 
 Private video and audio transcription for Windows. Drop in a recording and
 get a local transcript. No account, API key, subscription, or cloud upload is
-needed. On first run, the app offers to download its pinned local engine and
-speech models from the matching GitHub release.
+needed. On first run, the app offers to download two pinned speech models
+directly from their upstream Hugging Face repositories. Whisper CLI and the
+offline FFmpeg tools are included in the application download.
 
 ## Install and run
 
-1. Download `TranscribeMe-0.2.0-windows-x64.zip` from the project's release
+1. Download `TranscribeMe-0.3.0-windows-x64.zip` from the project's release
    page.
 2. Optionally compare the download's SHA-256 with `SHA256SUMS.txt`:
-   `Get-FileHash .\TranscribeMe-0.2.0-windows-x64.zip -Algorithm SHA256`.
+   `Get-FileHash .\TranscribeMe-0.3.0-windows-x64.zip -Algorithm SHA256`.
 3. Use **Extract All**, then open `TranscribeMe.exe`.
-4. Select **Download and install** when prompted. The app downloads the matching
-   Whisper CLI, FFmpeg tools, Whisper base model, and VAD model into
-   `%LOCALAPPDATA%\TranscribeMe\runtime`. The download is verified against
-   hashes embedded in the app before it is activated.
+4. Select **Download models** when prompted. The app downloads the pinned
+   Whisper base and VAD models into `%LOCALAPPDATA%\TranscribeMe\runtime\models`.
+   Each file is verified against its size and SHA-256 hash before activation.
 5. Choose your recording and start transcription.
 
 **Requirements:** Windows 10 22H2 or Windows 11, x64 processor with AVX2,
@@ -26,9 +26,9 @@ disk space for extracted audio as well as the application. A six-hour mono
 
 Microsoft Edge WebView2 is normally already installed. If it is missing, the
 embedded Microsoft installer needs internet access for that one-time setup.
-The local transcription engine also needs a one-time internet download. You do
-not need Python, a separate FFmpeg installation, or a Visual C++ runtime.
-After the engine and WebView2 are available, transcription works offline.
+The two speech models need a one-time internet download. You do not need Python,
+a separate FFmpeg installation, or a Visual C++ runtime. After the models and
+WebView2 are available, transcription works offline.
 
 ### Unsigned build
 
@@ -36,8 +36,8 @@ The current build is **unsigned**. An unsigned download may show Windows
 publisher or SmartScreen warnings. This documentation does not recommend
 bypassing those protections. A signed distribution requires the owner to sign
 and timestamp the executable and verify the resulting archive. Published
-releases include matching binary, runtime, source, and checksum downloads.
-A checksum detects changes; it does not authenticate an unsigned publisher.
+releases include matching binary, source, and checksum downloads. A checksum
+detects changes; it does not authenticate an unsigned publisher.
 
 ## What to expect
 
@@ -102,19 +102,20 @@ Source downloads and build intermediates live under `build\native`.
 The final output is:
 
 ```text
-dist\TranscribeMe-0.2.0-windows-x64\
-dist\TranscribeMe-0.2.0-windows-x64.zip
-dist\TranscribeMe-0.2.0-runtime-windows-x64.zip
-dist\TranscribeMe-0.2.0-native-source.zip
+dist\TranscribeMe-0.3.0-windows-x64\
+dist\TranscribeMe-0.3.0-windows-x64.zip
+dist\TranscribeMe-0.3.0-native-source.zip
 dist\SHA256SUMS.txt
 ```
 
-The app ZIP intentionally excludes the local engine. The runtime ZIP contains
-the exact files the app downloads on first run, and the embedded manifest
-verifies every extracted file before activation. The archives and checksums are
-also copied to `docs\downloads` for static hosting. Publish the runtime and
-native-source ZIPs alongside the app ZIP. The source archive contains the exact
-upstream archives, build recipes, and hashes required for the native tools.
+The app ZIP includes the three custom Windows executables and intentionally
+excludes the two speech models. The models are downloaded from immutable
+Hugging Face revisions listed in `scripts\runtime-lock.json`; the embedded
+manifest verifies their paths, sizes, sources, and SHA-256 hashes. The archives
+and checksums are also copied to `docs\downloads` for static hosting. Publish
+the native-source ZIP alongside the app ZIP. The source archive contains the
+exact upstream archives, build recipes, and hashes required for the native
+tools.
 To validate the corresponding-source archive without building or launching
 the app, run `.\scripts\package-native-source.ps1`. Its default output stays
 under `build\source-package-validation`, not in the public downloads folder.
@@ -145,11 +146,13 @@ $env:TRANSCRIBEME_TEST_VIDEO = 'C:\Videos\recording.mp4'
 go test .\internal\transcribe -run '^TestReal' -v -count=1 -timeout 15m
 ```
 
-To exercise a specific runtime rather than the default development runtime,
-set this variable to the folder containing its `runtime` directory:
+To exercise an extracted v0.3 package, point the runtime variable at the folder
+containing `TranscribeMe.exe` and the data variable at the folder containing
+the downloaded `runtime\models` directory:
 
 ```powershell
-$env:TRANSCRIBEME_TEST_RUNTIME_DIR = (Resolve-Path '.').Path
+$env:TRANSCRIBEME_TEST_RUNTIME_DIR = (Resolve-Path '.\dist\TranscribeMe-0.3.0-windows-x64').Path
+$env:TRANSCRIBEME_TEST_DATA_DIR = (Resolve-Path "$env:LOCALAPPDATA\TranscribeMe").Path
 go test .\internal\transcribe -run '^TestReal' -v -count=1 -timeout 15m
 ```
 

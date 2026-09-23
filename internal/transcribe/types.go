@@ -1,6 +1,6 @@
 package transcribe
 
-const Version = "0.2.0"
+const Version = "0.3.0"
 
 type FileInfo struct {
 	Path       string `json:"path"`

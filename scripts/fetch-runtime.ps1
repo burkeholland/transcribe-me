@@ -32,12 +32,19 @@ try {
     if (Test-Path $backup) { Move-Item -LiteralPath $backup -Destination $runtime }
     throw
 }
+$modelSources = @{
+    'runtime/models/ggml-base.bin' = $lock.model.url
+    'runtime/models/ggml-silero-v5.1.2.bin' = $lock.vad.url
+}
 $manifest = @{ files = @(Get-ChildItem $runtime -File -Recurse | Sort-Object FullName | ForEach-Object {
-    @{
-        path = [IO.Path]::GetRelativePath($root, $_.FullName).Replace('\', '/')
+    $path = [IO.Path]::GetRelativePath($root, $_.FullName).Replace('\', '/')
+    $entry = [ordered]@{
+        path = $path
         sha256 = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
         size = $_.Length
     }
+    if ($modelSources.ContainsKey($path)) { $entry.url = $modelSources[$path] }
+    $entry
 }) }
 $manifest | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8NoBOM (Join-Path $root 'assets\runtime-manifest.json')
 & (Join-Path $PSScriptRoot 'verify-runtime.ps1')

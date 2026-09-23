@@ -52,7 +52,7 @@ export interface Snapshot {
 
 export interface AppBridge {
   Status(): Promise<Snapshot>;
-  InstallRuntime(): Promise<void>;
+  InstallModels(): Promise<void>;
   ChooseFile(): Promise<FileInfo | null>;
   InspectFile(path: string): Promise<FileInfo>;
   StartTranscription(path: string, language: string): Promise<void>;

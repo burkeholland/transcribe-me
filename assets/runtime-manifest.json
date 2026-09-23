@@ -1,29 +1,31 @@
 {
   "files": [
     {
+      "path": "runtime/ffmpeg/bin/ffmpeg.exe",
       "sha256": "39cedf5c0a7c65d1872985382934faf45d286447258beb7c801458638d9be9f7",
-      "size": 3942414,
-      "path": "runtime/ffmpeg/bin/ffmpeg.exe"
+      "size": 3942414
     },
     {
+      "path": "runtime/ffmpeg/bin/ffprobe.exe",
       "sha256": "afe985097214a1bca1f188aef237c15672a51276fa21281abb064e7795910daf",
-      "size": 3713550,
-      "path": "runtime/ffmpeg/bin/ffprobe.exe"
+      "size": 3713550
     },
     {
+      "path": "runtime/models/ggml-base.bin",
       "sha256": "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe",
       "size": 147951465,
-      "path": "runtime/models/ggml-base.bin"
+      "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base.bin"
     },
     {
+      "path": "runtime/models/ggml-silero-v5.1.2.bin",
       "sha256": "29940d98d42b91fbd05ce489f3ecf7c72f0a42f027e4875919a28fb4c04ea2cf",
       "size": 885098,
-      "path": "runtime/models/ggml-silero-v5.1.2.bin"
+      "url": "https://huggingface.co/ggml-org/whisper-vad/resolve/9ffd54a1e1ee413ddf265af9913beaf518d1639b/ggml-silero-v5.1.2.bin"
     },
     {
-      "sha256": "5de6b63bff020d2276620e4929701f3b86bea054f7dcb5ab66efb6b222f4db2e",
-      "size": 2192896,
-      "path": "runtime/whisper/whisper-cli.exe"
+      "path": "runtime/whisper/whisper-cli.exe",
+      "sha256": "e3f92ed8d25fcbc2572c0685c7ce3e8c89cb8668a2c6043ca310dd0945457252",
+      "size": 2192896
     }
   ]
 }

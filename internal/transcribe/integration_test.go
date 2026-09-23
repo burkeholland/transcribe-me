@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-func realRuntime(t *testing.T) (string, []byte) {
+func realRuntime(t *testing.T) (string, string, []byte) {
 	t.Helper()
 	root := os.Getenv("TRANSCRIBEME_TEST_RUNTIME_DIR")
 	if root == "" {
@@ -31,7 +31,11 @@ func realRuntime(t *testing.T) (string, []byte) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return root, manifest
+	dataDir := os.Getenv("TRANSCRIBEME_TEST_DATA_DIR")
+	if dataDir != "" && !filepath.IsAbs(dataDir) {
+		t.Fatal("TRANSCRIBEME_TEST_DATA_DIR must be an absolute path containing the downloaded models")
+	}
+	return root, dataDir, manifest
 }
 
 func TestRealSilenceAndCancellation(t *testing.T) {
@@ -39,14 +43,18 @@ func TestRealSilenceAndCancellation(t *testing.T) {
 	if video == "" {
 		t.Skip("set TRANSCRIBEME_TEST_VIDEO to exercise native runtime edge cases")
 	}
-	root, manifest := realRuntime(t)
-	s := NewService(root, t.TempDir(), RunProcess)
+	root, dataDir, manifest := realRuntime(t)
+	if dataDir == "" {
+		dataDir = t.TempDir()
+	}
+	s := NewService(root, dataDir, RunProcess)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	defer s.Close()
 	if err := s.Initialize(ctx, manifest); err != nil {
 		t.Fatal(err)
 	}
+	historyBefore := len(s.Status().History)
 	// A standard PCM WAV fixture avoids relying on any installed encoder.
 	wav := make([]byte, 44+16000*2*2)
 	copy(wav, "RIFF")
@@ -91,7 +99,7 @@ func TestRealSilenceAndCancellation(t *testing.T) {
 		t.Fatal(err)
 	}
 	status = waitService(t, s)
-	if status.Job.State != "cancelled" || len(status.History) != 1 {
+	if status.Job.State != "cancelled" || len(status.History) != historyBefore+1 {
 		t.Fatalf("native cancellation failed: %+v", status)
 	}
 	entries, err := os.ReadDir(filepath.Join(s.dataDir, "work"))
@@ -112,7 +120,7 @@ func TestRealVideo(t *testing.T) {
 	if video == "" {
 		t.Skip("set TRANSCRIBEME_TEST_VIDEO to run real offline inference")
 	}
-	root, manifest := realRuntime(t)
+	root, dataDir, manifest := realRuntime(t)
 	hashFile := func() string {
 		f, err := os.Open(video)
 		if err != nil {
@@ -126,7 +134,10 @@ func TestRealVideo(t *testing.T) {
 		return string(h.Sum(nil))
 	}
 	before := hashFile()
-	s := NewService(root, filepath.Join(t.TempDir(), "Local data \u65e5\u672c"), RunProcess)
+	if dataDir == "" {
+		dataDir = filepath.Join(t.TempDir(), "Local data \u65e5\u672c")
+	}
+	s := NewService(root, dataDir, RunProcess)
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
 	defer cancel()
 	defer s.Close()
@@ -184,8 +195,11 @@ func TestRealSupportedFormats(t *testing.T) {
 	if os.Getenv("TRANSCRIBEME_TEST_VIDEO") == "" {
 		t.Skip("set TRANSCRIBEME_TEST_VIDEO to exercise real supported media formats")
 	}
-	root, manifest := realRuntime(t)
-	s := NewService(root, filepath.Join(t.TempDir(), "Codec profile \u65e5\u672c"), RunProcess)
+	root, dataDir, manifest := realRuntime(t)
+	if dataDir == "" {
+		dataDir = filepath.Join(t.TempDir(), "Codec profile \u65e5\u672c")
+	}
+	s := NewService(root, dataDir, RunProcess)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	defer s.Close()

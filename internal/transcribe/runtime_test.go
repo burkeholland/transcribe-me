@@ -1,16 +1,13 @@
 package transcribe
 
 import (
-	"archive/zip"
 	"bytes"
 	"context"
 	"errors"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -33,9 +30,9 @@ func (r *cancelAfterFirstRead) Read(p []byte) (int, error) {
 		return 0, r.ctx.Err()
 	}
 	r.read = true
-	n := copy(p, []byte("partial runtime archive"))
+	p[0] = 'x'
 	r.cancel()
-	return n, nil
+	return 1, nil
 }
 
 func (*cancelAfterFirstRead) Close() error {
@@ -55,52 +52,55 @@ func (*readTrackingBody) Close() error {
 	return nil
 }
 
-func runtimeArchive(t *testing.T, root string, manifest Manifest, extra string, damage bool) []byte {
+func fakeModelClient(t *testing.T, source string, manifest Manifest, transform func(Asset, []byte) []byte) *http.Client {
 	t.Helper()
-	var buffer bytes.Buffer
-	archive := zip.NewWriter(&buffer)
-	for index, asset := range manifest.Files {
-		header := &zip.FileHeader{Name: asset.Path, Method: zip.Deflate}
-		header.SetMode(0600)
-		entry, err := archive.CreateHeader(header)
-		if err != nil {
-			t.Fatal(err)
-		}
-		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(asset.Path)))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if damage && index == 0 {
-			data[0] ^= 0xff
-		}
-		if _, err := entry.Write(data); err != nil {
-			t.Fatal(err)
-		}
+	byURL := make(map[string]Asset)
+	for _, asset := range selectAssets(manifest, runtimeModelAssets) {
+		byURL[asset.URL] = asset
 	}
-	if extra != "" {
-		entry, err := archive.Create(extra)
+	return &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		asset, ok := byURL[request.URL.String()]
+		if !ok {
+			return nil, errors.New("unexpected model URL")
+		}
+		data, err := os.ReadFile(filepath.Join(source, filepath.FromSlash(asset.Path)))
 		if err != nil {
-			t.Fatal(err)
+			return nil, err
 		}
-		if _, err := entry.Write([]byte("unexpected")); err != nil {
-			t.Fatal(err)
+		if transform != nil {
+			data = transform(asset, data)
 		}
-	}
-	if err := archive.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return buffer.Bytes()
+		return &http.Response{
+			StatusCode:    http.StatusOK,
+			Status:        "200 OK",
+			Header:        make(http.Header),
+			Body:          io.NopCloser(bytes.NewReader(data)),
+			ContentLength: int64(len(data)),
+			Request:       request,
+		}, nil
+	})}
 }
 
-func serveRuntime(t *testing.T, body []byte) *httptest.Server {
+func seedExistingModels(t *testing.T, source, target string, manifest Manifest) string {
 	t.Helper()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(body)
-	}))
-	t.Cleanup(server.Close)
-	return server
+	for _, asset := range selectAssets(manifest, runtimeModelAssets) {
+		data, err := os.ReadFile(filepath.Join(source, filepath.FromSlash(asset.Path)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(target, filepath.FromSlash(asset.Path))
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	marker := filepath.Join(target, "runtime", "models", "existing-models.txt")
+	if err := os.WriteFile(marker, []byte("keep existing models"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return marker
 }
 
 func seedExistingRuntime(t *testing.T, source, target string, manifest Manifest) string {
@@ -125,71 +125,65 @@ func seedExistingRuntime(t *testing.T, source, target string, manifest Manifest)
 	return marker
 }
 
-func assertNoRuntimeInstallArtifacts(t *testing.T, root string) {
+func assertNoModelInstallArtifacts(t *testing.T, root string) {
 	t.Helper()
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, entry := range entries {
-		name := entry.Name()
-		if strings.HasPrefix(name, ".runtime-download-") ||
-			strings.HasPrefix(name, ".runtime-install-") ||
-			name == ".runtime-backup" {
-			t.Fatalf("runtime install artifact remains: %s", name)
+		if strings.HasPrefix(entry.Name(), ".model-install-") || entry.Name() == ".models-backup" {
+			t.Fatalf("model install artifact remains: %s", entry.Name())
 		}
 	}
 }
 
-func assertExistingRuntimeUnchanged(t *testing.T, target, marker string, manifestData []byte) {
+func assertExistingModelsUnchanged(t *testing.T, target, marker string, manifest Manifest) {
 	t.Helper()
 	data, err := os.ReadFile(marker)
-	if err != nil || string(data) != "keep existing runtime" {
-		t.Fatalf("existing runtime marker changed: %q err=%v", data, err)
+	if err != nil || string(data) != "keep existing models" {
+		t.Fatalf("existing model marker changed: %q err=%v", data, err)
 	}
-	if err := VerifyAssets(context.Background(), target, manifestData); err != nil {
-		t.Fatalf("existing runtime was damaged: %v", err)
+	if err := VerifyModels(context.Background(), target, manifest); err != nil {
+		t.Fatalf("existing models were damaged: %v", err)
 	}
-	assertNoRuntimeInstallArtifacts(t, target)
+	assertNoModelInstallArtifacts(t, target)
 }
 
-func TestRuntimeDownloadHost(t *testing.T) {
+func TestModelDownloadHost(t *testing.T) {
 	for _, test := range []struct {
 		host string
 		want bool
 	}{
-		{host: "github.com", want: true},
-		{host: "GitHub.com", want: true},
-		{host: "release-assets.githubusercontent.com", want: true},
-		{host: "RELEASE-ASSETS.GITHUBUSERCONTENT.COM", want: true},
-		{host: "githubusercontent.com"},
-		{host: "objects.githubusercontent.com"},
-		{host: "user-images.githubusercontent.com"},
-		{host: "evil.github.com"},
-		{host: "github.com.example.invalid"},
-		{host: "release-assets.githubusercontent.com.example.invalid"},
-		{host: "release-assets.githubusercontent.com."},
+		{host: "huggingface.co", want: true},
+		{host: "HUGGINGFACE.CO", want: true},
+		{host: "us.aws.cdn.hf.co", want: true},
+		{host: "eu.cdn.hf.co", want: true},
+		{host: "cdn.hf.co"},
+		{host: "hf.co"},
+		{host: "evil.huggingface.co"},
+		{host: "us.aws.cdn.hf.co.example.invalid"},
 		{host: ""},
 	} {
 		t.Run(test.host, func(t *testing.T) {
-			if got := runtimeDownloadHost(test.host); got != test.want {
-				t.Fatalf("runtimeDownloadHost(%q)=%v want %v", test.host, got, test.want)
+			if got := modelDownloadHost(test.host); got != test.want {
+				t.Fatalf("modelDownloadHost(%q)=%v want %v", test.host, got, test.want)
 			}
 		})
 	}
 }
 
-func TestRuntimeRedirectPolicy(t *testing.T) {
-	client := RuntimeHTTPClient()
+func TestModelRedirectPolicy(t *testing.T) {
+	client := ModelHTTPClient()
 	for _, test := range []struct {
 		name    string
 		target  string
 		wantErr bool
 	}{
-		{name: "github HTTPS", target: "https://github.com/example/runtime.zip"},
-		{name: "release asset HTTPS", target: "https://release-assets.githubusercontent.com/example/runtime.zip"},
-		{name: "github HTTP", target: "http://github.com/example/runtime.zip", wantErr: true},
-		{name: "untrusted HTTPS", target: "https://objects.githubusercontent.com/example/runtime.zip", wantErr: true},
+		{name: "Hugging Face HTTPS", target: "https://huggingface.co/example/model"},
+		{name: "Hugging Face CDN HTTPS", target: "https://us.aws.cdn.hf.co/example/model"},
+		{name: "Hugging Face HTTP", target: "http://huggingface.co/example/model", wantErr: true},
+		{name: "untrusted HTTPS", target: "https://example.com/model", wantErr: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			request, err := http.NewRequest(http.MethodGet, test.target, nil)
@@ -204,63 +198,67 @@ func TestRuntimeRedirectPolicy(t *testing.T) {
 	}
 }
 
-func TestInstallRuntimeArchive(t *testing.T) {
+func TestInstallModels(t *testing.T) {
 	source, manifestData := fakeAssets(t)
 	manifest := mustManifest(t, manifestData)
-	server := serveRuntime(t, runtimeArchive(t, source, manifest, "", false))
 	target := t.TempDir()
 	var states []string
-	err := InstallRuntimeArchive(context.Background(), server.Client(), target, server.URL, manifestData,
+	err := InstallModels(context.Background(), fakeModelClient(t, source, manifest, nil), target, manifest,
 		func(state string, _, _ int64) { states = append(states, state) })
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := VerifyAssets(context.Background(), target, manifestData); err != nil {
+	if err := VerifyModels(context.Background(), target, manifest); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Contains(states, "downloading") || !slices.Contains(states, "installing") {
+	if !slicesContains(states, "downloading") || !slicesContains(states, "installing") {
 		t.Fatalf("missing progress states: %v", states)
 	}
 }
 
-func TestInstallRuntimeReplacesExistingRuntime(t *testing.T) {
+func TestInstallModelsReplacesExistingModels(t *testing.T) {
 	source, manifestData := fakeAssets(t)
 	manifest := mustManifest(t, manifestData)
 	target := t.TempDir()
-	marker := seedExistingRuntime(t, source, target, manifest)
-	server := serveRuntime(t, runtimeArchive(t, source, manifest, "", false))
+	marker := seedExistingModels(t, source, target, manifest)
 
-	if err := InstallRuntimeArchive(context.Background(), server.Client(), target, server.URL, manifestData, nil); err != nil {
+	if err := InstallModels(context.Background(), fakeModelClient(t, source, manifest, nil), target, manifest, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := VerifyAssets(context.Background(), target, manifestData); err != nil {
+	if err := VerifyModels(context.Background(), target, manifest); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(marker); !os.IsNotExist(err) {
-		t.Fatalf("old runtime was not replaced: %v", err)
+		t.Fatalf("old models were not replaced: %v", err)
 	}
-	assertNoRuntimeInstallArtifacts(t, target)
+	assertNoModelInstallArtifacts(t, target)
 }
 
-func TestInstallRuntimeDamagedArchivePreservesExistingRuntime(t *testing.T) {
+func TestInstallModelsDamagedDownloadPreservesExistingModels(t *testing.T) {
 	source, manifestData := fakeAssets(t)
 	manifest := mustManifest(t, manifestData)
 	target := t.TempDir()
-	marker := seedExistingRuntime(t, source, target, manifest)
-	server := serveRuntime(t, runtimeArchive(t, source, manifest, "", true))
+	marker := seedExistingModels(t, source, target, manifest)
+	client := fakeModelClient(t, source, manifest, func(asset Asset, data []byte) []byte {
+		if strings.HasSuffix(asset.Path, "ggml-base.bin") {
+			data = append([]byte(nil), data...)
+			data[0] ^= 0xff
+		}
+		return data
+	})
 
-	err := InstallRuntimeArchive(context.Background(), server.Client(), target, server.URL, manifestData, nil)
-	if err == nil || !strings.Contains(err.Error(), "failed verification") {
-		t.Fatalf("error=%v want damaged archive rejection", err)
+	err := InstallModels(context.Background(), client, target, manifest, nil)
+	if err == nil || !strings.Contains(err.Error(), "SHA-256") {
+		t.Fatalf("error=%v want damaged model rejection", err)
 	}
-	assertExistingRuntimeUnchanged(t, target, marker, manifestData)
+	assertExistingModelsUnchanged(t, target, marker, manifest)
 }
 
-func TestInstallRuntimeCancellationPreservesExistingRuntime(t *testing.T) {
+func TestInstallModelsCancellationPreservesExistingModels(t *testing.T) {
 	source, manifestData := fakeAssets(t)
 	manifest := mustManifest(t, manifestData)
 	target := t.TempDir()
-	marker := seedExistingRuntime(t, source, target, manifest)
+	marker := seedExistingModels(t, source, target, manifest)
 	ctx, cancel := context.WithCancel(context.Background())
 	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		return &http.Response{
@@ -268,125 +266,91 @@ func TestInstallRuntimeCancellationPreservesExistingRuntime(t *testing.T) {
 			Status:        "200 OK",
 			Header:        make(http.Header),
 			Body:          &cancelAfterFirstRead{ctx: request.Context(), cancel: cancel},
-			ContentLength: 1024,
+			ContentLength: 7,
 			Request:       request,
 		}, nil
 	})}
 
-	err := InstallRuntimeArchive(ctx, client, target, "https://github.com/example/runtime.zip", manifestData, nil)
+	err := InstallModels(ctx, client, target, manifest, nil)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error=%v want context cancellation", err)
 	}
-	assertExistingRuntimeUnchanged(t, target, marker, manifestData)
+	assertExistingModelsUnchanged(t, target, marker, manifest)
 }
 
-func TestInstallRuntimeRejectsNonOKResponse(t *testing.T) {
+func TestInstallModelsRejectsNonOKResponse(t *testing.T) {
 	_, manifestData := fakeAssets(t)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		http.Error(w, "unavailable", http.StatusServiceUnavailable)
-	}))
-	t.Cleanup(server.Close)
+	manifest := mustManifest(t, manifestData)
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusServiceUnavailable,
+			Status:     "503 Service Unavailable",
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader("unavailable")),
+			Request:    request,
+		}, nil
+	})}
 	target := t.TempDir()
 
-	err := InstallRuntimeArchive(context.Background(), server.Client(), target, server.URL, manifestData, nil)
+	err := InstallModels(context.Background(), client, target, manifest, nil)
 	if err == nil || !strings.Contains(err.Error(), "503 Service Unavailable") {
 		t.Fatalf("error=%v want non-200 rejection", err)
 	}
-	assertNoRuntimeInstallArtifacts(t, target)
+	assertNoModelInstallArtifacts(t, target)
 }
 
-func TestInstallRuntimeRejectsOversizedContentLengthWithoutReadingBody(t *testing.T) {
+func TestInstallModelsRejectsWrongContentLengthWithoutReadingBody(t *testing.T) {
 	_, manifestData := fakeAssets(t)
+	manifest := mustManifest(t, manifestData)
 	body := &readTrackingBody{}
 	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode:    http.StatusOK,
 			Status:        "200 OK",
-			Header:        http.Header{"Content-Length": []string{strconv.FormatInt(maxRuntimeArchiveBytes+1, 10)}},
+			Header:        http.Header{"Content-Length": []string{strconv.FormatInt(8, 10)}},
 			Body:          body,
-			ContentLength: maxRuntimeArchiveBytes + 1,
+			ContentLength: 8,
 			Request:       request,
 		}, nil
 	})}
 	target := t.TempDir()
 
-	err := InstallRuntimeArchive(context.Background(), client, target, "https://github.com/example/runtime.zip", manifestData, nil)
-	if err == nil || !strings.Contains(err.Error(), "file is larger") {
-		t.Fatalf("error=%v want oversized response rejection", err)
+	err := InstallModels(context.Background(), client, target, manifest, nil)
+	if err == nil || !strings.Contains(err.Error(), "server reported 8") {
+		t.Fatalf("error=%v want content-length rejection", err)
 	}
 	if body.reads != 0 {
-		t.Fatalf("oversized response body was read %d times", body.reads)
+		t.Fatalf("wrong-size response body was read %d times", body.reads)
 	}
-	assertNoRuntimeInstallArtifacts(t, target)
+	assertNoModelInstallArtifacts(t, target)
 }
 
-func TestInstallRuntimeRejectsDamagedOrUnexpectedArchives(t *testing.T) {
-	source, manifestData := fakeAssets(t)
-	manifest := mustManifest(t, manifestData)
-	for _, test := range []struct {
-		name   string
-		extra  string
-		damage bool
-		want   string
-	}{
-		{name: "damaged", damage: true, want: "failed verification"},
-		{name: "extra entry", extra: "runtime/unexpected.exe", want: "unexpected entry"},
-		{name: "path traversal", extra: "../outside.txt", want: "unexpected entry"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			server := serveRuntime(t, runtimeArchive(t, source, manifest, test.extra, test.damage))
-			target := t.TempDir()
-			err := InstallRuntimeArchive(context.Background(), server.Client(), target, server.URL, manifestData, nil)
-			if err == nil || !strings.Contains(err.Error(), test.want) {
-				t.Fatalf("error=%v want %q", err, test.want)
-			}
-			if _, statErr := os.Stat(filepath.Join(target, "runtime")); !os.IsNotExist(statErr) {
-				t.Fatalf("failed archive installed files: %v", statErr)
-			}
-		})
-	}
-}
-
-func TestPackagedRuntimeArchive(t *testing.T) {
-	path := os.Getenv("TRANSCRIBEME_TEST_RUNTIME_ARCHIVE")
-	if path == "" {
-		t.Skip("set TRANSCRIBEME_TEST_RUNTIME_ARCHIVE to verify a production runtime ZIP")
-	}
-	if !filepath.IsAbs(path) {
-		t.Fatal("TRANSCRIBEME_TEST_RUNTIME_ARCHIVE must be an absolute path")
-	}
-	file, err := os.Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	stat, err := file.Stat()
-	if err != nil {
-		file.Close()
-		t.Fatal(err)
-	}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Length", strconv.FormatInt(stat.Size(), 10))
-		_, _ = file.Seek(0, 0)
-		_, _ = io.Copy(w, file)
-	}))
-	t.Cleanup(func() {
-		server.Close()
-		file.Close()
-	})
-	manifest, err := os.ReadFile(filepath.Join("..", "..", "assets", "runtime-manifest.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	target := os.Getenv("TRANSCRIBEME_TEST_RUNTIME_INSTALL_DIR")
+func TestPublishedModels(t *testing.T) {
+	target := os.Getenv("TRANSCRIBEME_TEST_MODEL_DOWNLOAD_DIR")
 	if target == "" {
-		target = t.TempDir()
-	} else if !filepath.IsAbs(target) {
-		t.Fatal("TRANSCRIBEME_TEST_RUNTIME_INSTALL_DIR must be an absolute dedicated test directory")
+		t.Skip("set TRANSCRIBEME_TEST_MODEL_DOWNLOAD_DIR to test the published model sources")
 	}
-	if err := InstallRuntimeArchive(context.Background(), server.Client(), target, server.URL, manifest, nil); err != nil {
+	if !filepath.IsAbs(target) {
+		t.Fatal("TRANSCRIBEME_TEST_MODEL_DOWNLOAD_DIR must be an absolute dedicated test directory")
+	}
+	manifestData, err := os.ReadFile(filepath.Join("..", "..", "assets", "runtime-manifest.json"))
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := VerifyAssets(context.Background(), target, manifest); err != nil {
+	manifest := mustManifest(t, manifestData)
+	if err := InstallModels(context.Background(), ModelHTTPClient(), target, manifest, nil); err != nil {
 		t.Fatal(err)
 	}
+	if err := VerifyModels(context.Background(), target, manifest); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func slicesContains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }

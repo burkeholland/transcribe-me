@@ -17,13 +17,14 @@ import (
 type Service struct {
 	mu            sync.Mutex
 	engine        Engine
+	packageRoot   string
 	store         Store
 	dataDir       string
 	snapshot      Snapshot
 	cancel        context.CancelFunc
 	done          chan struct{}
-	manifest      []byte
-	install       RuntimeInstaller
+	manifest      Manifest
+	install       ModelInstaller
 	client        *http.Client
 	installCancel context.CancelFunc
 	installDone   chan struct{}
@@ -31,14 +32,14 @@ type Service struct {
 
 func NewService(root, dataDir string, runner Runner) *Service {
 	return &Service{
-		engine: Engine{Root: root, Run: runner}, dataDir: dataDir,
+		engine: Engine{Root: root, Run: runner}, packageRoot: root, dataDir: dataDir,
 		store: Store{Dir: filepath.Join(dataDir, "transcripts")},
 		snapshot: Snapshot{
 			ModelName: "Whisper base (multilingual)", Version: Version, History: []Summary{},
 			RuntimeState: "checking", RuntimeMessage: "Checking the local transcription engine",
 		},
-		install: InstallRuntimeArchive,
-		client:  RuntimeHTTPClient(),
+		install: InstallModels,
+		client:  ModelHTTPClient(),
 	}
 }
 
@@ -73,38 +74,48 @@ func (s *Service) Initialize(ctx context.Context, manifest []byte) error {
 	if err != nil {
 		return s.failSetup(err)
 	}
-	s.manifest = append([]byte(nil), manifest...)
+	s.manifest = parsed
 	s.mu.Lock()
-	s.snapshot.RuntimeTotalBytes = RuntimeInstalledSize(parsed)
+	s.snapshot.RuntimeTotalBytes = ModelInstalledSize(parsed)
 	s.mu.Unlock()
 	cleanupErr := cleanInterruptedRuntimeInstall(s.dataDir)
-	recoveryErr := recoverRuntimeBackup(ctx, s.dataDir, parsed)
-	for _, root := range []string{s.dataDir, s.engine.Root} {
-		if root == "" {
-			continue
-		}
-		if err := VerifyManifest(ctx, root, parsed); err == nil {
-			if root == s.dataDir {
+	recoveryErr := errors.Join(
+		recoverRuntimeBackup(ctx, s.dataDir, parsed),
+		recoverModelsBackup(ctx, s.dataDir, parsed),
+	)
+	if toolsErr := VerifyTools(ctx, s.packageRoot, parsed); toolsErr == nil {
+		s.engine.Root = s.packageRoot
+		if err := VerifyModels(ctx, s.dataDir, parsed); err == nil {
+			cleanupErr = errors.Join(cleanupErr, cleanReplacedModelsBackup(s.dataDir))
+			if err := VerifyTools(ctx, s.dataDir, parsed); err == nil {
 				cleanupErr = errors.Join(cleanupErr, cleanReplacedRuntimeBackup(s.dataDir))
 			}
-			s.mu.Lock()
-			s.engine.Root = root
-			s.snapshot.Ready = true
-			s.snapshot.RuntimeState = "ready"
-			s.snapshot.RuntimeMessage = "Running offline"
-			if cleanupErr != nil {
-				s.snapshot.RuntimeError = cleanupErr.Error()
-			} else {
-				s.snapshot.RuntimeError = ""
-			}
-			s.mu.Unlock()
+			s.setReady(s.packageRoot, s.dataDir, cleanupErr)
 			return nil
 		}
+		if err := VerifyModels(ctx, s.packageRoot, parsed); err == nil {
+			s.setReady(s.packageRoot, s.packageRoot, cleanupErr)
+			return nil
+		}
+	} else {
+		if err := VerifyManifest(ctx, s.dataDir, parsed); err == nil {
+			cleanupErr = errors.Join(
+				cleanupErr,
+				cleanReplacedRuntimeBackup(s.dataDir),
+				cleanReplacedModelsBackup(s.dataDir),
+			)
+			s.setReady(s.dataDir, s.dataDir, cleanupErr)
+			return nil
+		}
+		return s.failSetup(fmt.Errorf(
+			"bundled transcription tools are missing or damaged: %w. Extract the complete application download again",
+			toolsErr,
+		))
 	}
 	s.mu.Lock()
 	s.snapshot.Ready = false
 	s.snapshot.RuntimeState = "required"
-	s.snapshot.RuntimeMessage = "Download the local transcription engine to begin"
+	s.snapshot.RuntimeMessage = "Download the speech models to begin"
 	if runtimeErr := errors.Join(cleanupErr, recoveryErr); runtimeErr != nil {
 		s.snapshot.RuntimeError = runtimeErr.Error()
 	} else {
@@ -112,6 +123,21 @@ func (s *Service) Initialize(ctx context.Context, manifest []byte) error {
 	}
 	s.mu.Unlock()
 	return nil
+}
+
+func (s *Service) setReady(toolsRoot, modelRoot string, warning error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.engine.Root = toolsRoot
+	s.engine.ModelRoot = modelRoot
+	s.snapshot.Ready = true
+	s.snapshot.RuntimeState = "ready"
+	s.snapshot.RuntimeMessage = "Running offline"
+	if warning != nil {
+		s.snapshot.RuntimeError = warning.Error()
+	} else {
+		s.snapshot.RuntimeError = ""
+	}
 }
 
 func (s *Service) failSetup(err error) error {
@@ -122,7 +148,7 @@ func (s *Service) failSetup(err error) error {
 	return err
 }
 
-func (s *Service) InstallRuntime(ctx context.Context, source string) error {
+func (s *Service) InstallModels(ctx context.Context) error {
 	s.mu.Lock()
 	if s.snapshot.Ready {
 		s.mu.Unlock()
@@ -132,7 +158,7 @@ func (s *Service) InstallRuntime(ctx context.Context, source string) error {
 		s.mu.Unlock()
 		return errors.New("the local transcription engine is already downloading")
 	}
-	if len(s.manifest) == 0 {
+	if len(s.manifest.Files) == 0 {
 		s.mu.Unlock()
 		return errors.New("the runtime manifest is unavailable")
 	}
@@ -141,14 +167,15 @@ func (s *Service) InstallRuntime(ctx context.Context, source string) error {
 	s.installCancel = cancel
 	s.installDone = done
 	s.snapshot.RuntimeState = "downloading"
-	s.snapshot.RuntimeMessage = "Downloading the local transcription engine"
+	s.snapshot.RuntimeMessage = "Downloading the speech models"
 	s.snapshot.RuntimeError = ""
 	s.snapshot.RuntimeProgress = 0
 	s.snapshot.RuntimeDownloadedBytes = 0
 	s.snapshot.RuntimeDownloadTotalBytes = 0
-	manifest := append([]byte(nil), s.manifest...)
+	manifest := Manifest{Files: append([]Asset(nil), s.manifest.Files...)}
 	installer := s.install
 	client := s.client
+	toolsRoot := s.engine.Root
 	s.mu.Unlock()
 	defer func() {
 		cancel()
@@ -159,28 +186,46 @@ func (s *Service) InstallRuntime(ctx context.Context, source string) error {
 		s.mu.Unlock()
 	}()
 
-	err := installer(installCtx, client, s.dataDir, source, manifest, s.runtimeProgress)
+	installErr := installer(installCtx, client, s.dataDir, manifest, s.runtimeProgress)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err != nil {
+	var installWarning error
+	if installErr != nil {
+		cleanupErr, ok := installErr.(*modelActivationCleanupError)
+		if ok {
+			installWarning = cleanupErr
+		} else {
+			s.snapshot.Ready = false
+			s.snapshot.RuntimeState = "failed"
+			s.snapshot.RuntimeMessage = "The speech models were not installed"
+			s.snapshot.RuntimeError = installErr.Error()
+			return installErr
+		}
+	}
+	if err := VerifyModels(installCtx, s.dataDir, manifest); err != nil {
 		s.snapshot.Ready = false
 		s.snapshot.RuntimeState = "failed"
-		s.snapshot.RuntimeMessage = "The local transcription engine was not installed"
+		s.snapshot.RuntimeMessage = "The downloaded models could not be verified"
 		s.snapshot.RuntimeError = err.Error()
 		return err
 	}
-	if err := VerifyAssets(installCtx, s.dataDir, manifest); err != nil {
+	if err := VerifyTools(installCtx, toolsRoot, manifest); err != nil {
 		s.snapshot.Ready = false
 		s.snapshot.RuntimeState = "failed"
-		s.snapshot.RuntimeMessage = "The downloaded engine could not be verified"
+		s.snapshot.RuntimeMessage = "The bundled transcription tools could not be verified"
 		s.snapshot.RuntimeError = err.Error()
 		return err
 	}
-	s.engine.Root = s.dataDir
+	s.engine.Root = toolsRoot
+	s.engine.ModelRoot = s.dataDir
 	s.snapshot.Ready = true
 	s.snapshot.RuntimeState = "ready"
 	s.snapshot.RuntimeMessage = "Running offline"
-	s.snapshot.RuntimeError = ""
+	if installWarning != nil {
+		s.snapshot.RuntimeError = installWarning.Error()
+	} else {
+		s.snapshot.RuntimeError = ""
+	}
 	s.snapshot.RuntimeProgress = 100
 	return nil
 }
@@ -195,9 +240,9 @@ func (s *Service) runtimeProgress(state string, downloaded, total int64) {
 		s.snapshot.RuntimeProgress = min(100, float64(downloaded)/float64(total)*100)
 	}
 	if state == "installing" {
-		s.snapshot.RuntimeMessage = "Verifying and installing the local transcription engine"
+		s.snapshot.RuntimeMessage = "Verifying and installing the speech models"
 	} else {
-		s.snapshot.RuntimeMessage = "Downloading the local transcription engine"
+		s.snapshot.RuntimeMessage = "Downloading the speech models"
 	}
 }
 

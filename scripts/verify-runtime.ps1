@@ -3,9 +3,12 @@ param(
     [string]$RuntimePath = (Join-Path (Split-Path $PSScriptRoot -Parent) 'runtime'),
     [string]$ManifestPath = (Join-Path (Split-Path $PSScriptRoot -Parent) 'assets\runtime-manifest.json'),
     [string]$ApplicationPath,
-    [switch]$NoManifest
+    [switch]$NoManifest,
+    [switch]$ToolsOnly,
+    [switch]$ModelsOnly
 )
 . (Join-Path $PSScriptRoot 'common.ps1')
+if ($ToolsOnly -and $ModelsOnly) { throw 'Choose either -ToolsOnly or -ModelsOnly, not both.' }
 if (-not ('TranscribeMe.PEImports' -as [type])) {
     Add-Type -TypeDefinition @'
 using System;
@@ -69,10 +72,19 @@ $system = @(
     'UCRTBASE.dll', 'VERSION.dll', 'WINHTTP.dll', 'WININET.dll', 'WINMM.dll',
     'WINSPOOL.DRV', 'WINTRUST.dll', 'WS2_32.dll', 'WTSAPI32.dll'
 )
-$expected = @('whisper\whisper-cli.exe', 'ffmpeg\bin\ffmpeg.exe', 'ffmpeg\bin\ffprobe.exe',
-    'models\ggml-base.bin', 'models\ggml-silero-v5.1.2.bin')
+$tools = @('whisper\whisper-cli.exe', 'ffmpeg\bin\ffmpeg.exe', 'ffmpeg\bin\ffprobe.exe')
+$models = @('models\ggml-base.bin', 'models\ggml-silero-v5.1.2.bin')
+$expected = if ($ToolsOnly) { $tools } elseif ($ModelsOnly) { $models } else { $tools + $models }
 foreach ($name in $expected) {
     if (-not (Test-Path (Join-Path $RuntimePath $name) -PathType Leaf)) { throw "Missing runtime file: $name" }
+}
+if ($ToolsOnly -or $ModelsOnly) {
+    $expectedSet = @{}
+    foreach ($name in $expected) { $expectedSet[$name] = $true }
+    foreach ($file in Get-ChildItem $RuntimePath -Recurse -File) {
+        $relative = [IO.Path]::GetRelativePath($RuntimePath, $file.FullName)
+        if (-not $expectedSet.ContainsKey($relative)) { throw "Unexpected runtime file: $relative" }
+    }
 }
 $nativeFiles = @(Get-ChildItem $RuntimePath -Recurse -File | Where-Object Extension -in '.exe', '.dll')
 if ($ApplicationPath) { $nativeFiles += Get-Item -LiteralPath $ApplicationPath }
@@ -88,15 +100,23 @@ foreach ($file in $nativeFiles) {
     }
 }
 $lock = Get-Content (Join-Path $PSScriptRoot 'runtime-lock.json') -Raw | ConvertFrom-Json
-foreach ($model in @(@{ name = $expected[3]; hash = $lock.model.sha256 }, @{ name = $expected[4]; hash = $lock.vad.sha256 })) {
-    if ((Get-FileHash (Join-Path $RuntimePath $model.name) -Algorithm SHA256).Hash.ToLowerInvariant() -ne $model.hash) {
-        throw "Model integrity failure: $($model.name)"
+if (-not $ToolsOnly) {
+    foreach ($model in @(@{ name = $models[0]; hash = $lock.model.sha256 }, @{ name = $models[1]; hash = $lock.vad.sha256 })) {
+        if ((Get-FileHash (Join-Path $RuntimePath $model.name) -Algorithm SHA256).Hash.ToLowerInvariant() -ne $model.hash) {
+            throw "Model integrity failure: $($model.name)"
+        }
     }
 }
 if (-not $NoManifest) {
     $manifest = Get-Content $ManifestPath -Raw | ConvertFrom-Json
+    $manifestFiles = @($manifest.files)
+    if ($ToolsOnly -or $ModelsOnly) {
+        $selected = @{}
+        foreach ($name in $expected) { $selected["runtime/$($name.Replace('\', '/'))"] = $true }
+        $manifestFiles = @($manifestFiles | Where-Object { $selected.ContainsKey($_.path) })
+    }
     $seen = @{}
-    foreach ($file in $manifest.files) {
+    foreach ($file in $manifestFiles) {
         if ($file.path -notmatch '^runtime/[a-zA-Z0-9._/-]+$' -or $file.path.Contains('..')) {
             throw "Unsafe manifest path: $($file.path)"
         }
@@ -120,18 +140,20 @@ if (-not $NoManifest) {
         if (-not $binary.Contains($embedded)) { throw 'Application embeds a different runtime manifest. Rebuild Wails before packaging.' }
     }
 }
-$ffmpeg = Join-Path $RuntimePath 'ffmpeg\bin\ffmpeg.exe'
-$probe = Join-Path $RuntimePath 'ffmpeg\bin\ffprobe.exe'
-$version = (& $ffmpeg -version 2>&1 | Out-String)
-if ($LASTEXITCODE -ne 0 -or $version -notmatch 'ffmpeg version 8\.1\.2' -or
-    $version -notmatch '--disable-network' -or $version -match '--enable-(gpl|nonfree|version3|lib)') {
-    throw 'FFmpeg version or redistribution configuration check failed.'
+if (-not $ModelsOnly) {
+    $ffmpeg = Join-Path $RuntimePath 'ffmpeg\bin\ffmpeg.exe'
+    $probe = Join-Path $RuntimePath 'ffmpeg\bin\ffprobe.exe'
+    $version = (& $ffmpeg -version 2>&1 | Out-String)
+    if ($LASTEXITCODE -ne 0 -or $version -notmatch 'ffmpeg version 8\.1\.2' -or
+        $version -notmatch '--disable-network' -or $version -match '--enable-(gpl|nonfree|version3|lib)') {
+        throw 'FFmpeg version or redistribution configuration check failed.'
+    }
+    Invoke-Checked $probe @('-version')
+    $protocols = (& $ffmpeg -hide_banner -protocols 2>&1 | Out-String)
+    if ($LASTEXITCODE -ne 0 -or $protocols -match '(?m)^\s+(https?|tcp|tls|udp|ftp)$') {
+        throw 'Network protocols must not be compiled into FFmpeg.'
+    }
+    $help = (& (Join-Path $RuntimePath 'whisper\whisper-cli.exe') --help 2>&1 | Out-String)
+    if ($LASTEXITCODE -ne 0 -or $help -notmatch '--vad-model') { throw 'Whisper CLI did not pass its startup check.' }
 }
-Invoke-Checked $probe @('-version')
-$protocols = (& $ffmpeg -hide_banner -protocols 2>&1 | Out-String)
-if ($LASTEXITCODE -ne 0 -or $protocols -match '(?m)^\s+(https?|tcp|tls|udp|ftp)$') {
-    throw 'Network protocols must not be compiled into FFmpeg.'
-}
-$help = (& (Join-Path $RuntimePath 'whisper\whisper-cli.exe') --help 2>&1 | Out-String)
-if ($LASTEXITCODE -ne 0 -or $help -notmatch '--vad-model') { throw 'Whisper CLI did not pass its startup check.' }
 Write-Host "Verified x64 PE dependency closure, model hashes, native startup, and offline FFmpeg: $RuntimePath"

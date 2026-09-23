@@ -3,7 +3,7 @@
 param(
     [switch]$RebuildNative,
     [ValidatePattern('^\d+\.\d+\.\d+([.-][A-Za-z0-9.-]+)?$')]
-    [string]$Version = '0.2.0'
+    [string]$Version = '0.3.0'
 )
 . (Join-Path $PSScriptRoot 'common.ps1')
 $root = Split-Path $PSScriptRoot -Parent
@@ -41,6 +41,10 @@ try {
     if (Test-Path $package) { Remove-Item -LiteralPath $package -Recurse -Force }
     New-Item -ItemType Directory -Force $package | Out-Null
     Copy-Item -LiteralPath $exe -Destination $package
+    New-Item -ItemType Directory -Force "$package\runtime\whisper", "$package\runtime\ffmpeg\bin" | Out-Null
+    Copy-Item "$root\runtime\whisper\whisper-cli.exe" "$package\runtime\whisper"
+    Copy-Item "$root\runtime\ffmpeg\bin\ffmpeg.exe", "$root\runtime\ffmpeg\bin\ffprobe.exe" "$package\runtime\ffmpeg\bin"
+    & "$PSScriptRoot\verify-runtime.ps1" -RuntimePath "$package\runtime" -ToolsOnly
     Copy-Item "$root\README.md", "$root\PRIVACY.md", "$root\THIRD-PARTY-NOTICES.md" $package
     New-Item -ItemType Directory -Force "$package\licenses" | Out-Null
     Copy-Item "$root\LICENSE" "$package\licenses"
@@ -57,16 +61,15 @@ try {
         "Executable Go version: $($goCheck.Binary); go.mod minimum: $($goCheck.Required)"
         "Wails: $wailsVersionText"
         'Native configuration and input hashes: companion native-source archive.'
-        'The local engine is not bundled. The app downloads the matching verified runtime on first use.'
+        'Whisper CLI and the offline FFmpeg tools are bundled. The app downloads only the two pinned speech models.'
         'Tests: go test ./...; go vet ./...; npm ci; npm test; npm run build; npm run test:e2e; verify-runtime.ps1; test-native.ps1.'
         'A passing local build is not a signed or published production release.'
     ) | Set-Content "$package\BUILD-INFO.txt" -Encoding utf8NoBOM
-    $runtimeArchive = & "$PSScriptRoot\package-runtime.ps1" -Version $Version -OutputDirectory $dist
     $sourceArchive = & "$PSScriptRoot\package-native-source.ps1" -Version $Version -OutputDirectory $dist
     $zip = "$package.zip"
     if (Test-Path $zip) { Remove-Item -LiteralPath $zip -Force }
     Compress-Archive -LiteralPath $package -DestinationPath $zip -CompressionLevel Optimal
-    $archives = @((Get-Item $zip), $runtimeArchive, $sourceArchive)
+    $archives = @((Get-Item $zip), $sourceArchive)
     @($archives | ForEach-Object {
         "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())  $($_.Name)"
     }) | Set-Content "$dist\SHA256SUMS.txt" -Encoding ascii
@@ -74,6 +77,6 @@ try {
     New-Item -ItemType Directory -Force $downloads | Out-Null
     $archives | Copy-Item -Destination $downloads -Force
     Copy-Item "$dist\SHA256SUMS.txt" $downloads -Force
-    Write-Host "Application, downloadable runtime, and corresponding source verified: $dist"
+    Write-Host "Application with bundled native tools and corresponding source verified: $dist"
     Write-Host "Authenticode: $($signature.Status). No public release was published."
 } finally { Pop-Location }

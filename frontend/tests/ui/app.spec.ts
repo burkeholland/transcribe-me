@@ -35,13 +35,13 @@ async function desktop(page: Page, scenario = 'normal') {
       ready: scenario !== 'setup-error' && scenario !== 'checking' && scenario !== 'runtime-required' && scenario !== 'runtime-downloading',
       setupError: scenario === 'setup-error' ? 'The local application data folder is unavailable.' : '',
       runtimeState: scenario === 'checking' ? 'checking' : scenario === 'runtime-required' ? 'required' : scenario === 'runtime-downloading' ? 'downloading' : scenario === 'setup-error' ? 'failed' : 'ready',
-      runtimeMessage: scenario === 'runtime-required' ? 'Download the local transcription engine to begin' : 'Running offline',
+      runtimeMessage: scenario === 'runtime-required' ? 'Download the speech models to begin' : 'Running offline',
       runtimeError: scenario === 'runtime-cleanup-warning' ? 'Old engine setup files could not be removed.' : '',
       runtimeProgress: scenario === 'runtime-downloading' ? 50 : 0,
-      runtimeDownloadedBytes: scenario === 'runtime-downloading' ? 72_000_000 : 0,
-      runtimeDownloadTotalBytes: scenario === 'runtime-downloading' ? 144_000_000 : 0,
-      runtimeTotalBytes: 158_693_423,
-      modelName: 'Whisper base multilingual', version: '0.2.0', job: null, history: [transcript],
+      runtimeDownloadedBytes: scenario === 'runtime-downloading' ? 74_418_282 : 0,
+      runtimeDownloadTotalBytes: scenario === 'runtime-downloading' ? 148_836_563 : 0,
+      runtimeTotalBytes: 148_836_563,
+      modelName: 'Whisper base multilingual', version: '0.3.0', job: null, history: [transcript],
       historyWarning: scenario === 'history-warning' ? 'Some older transcripts could not be read. Healthy transcripts are still available.' : '',
     };
     let statusInFlight = 0;
@@ -68,12 +68,12 @@ async function desktop(page: Page, scenario = 'normal') {
         statusInFlight--;
         return structuredClone(snapshot);
       },
-      InstallRuntime: async () => {
-        calls.push('install-runtime');
+      InstallModels: async () => {
+        calls.push('install-models');
         snapshot.runtimeState = 'downloading';
         snapshot.runtimeProgress = 50;
-        snapshot.runtimeDownloadedBytes = 72_000_000;
-        snapshot.runtimeDownloadTotalBytes = 144_000_000;
+        snapshot.runtimeDownloadedBytes = 74_418_282;
+        snapshot.runtimeDownloadTotalBytes = 148_836_563;
         await new Promise(resolve => setTimeout(resolve, 50));
         snapshot.ready = true;
         snapshot.runtimeState = 'ready';
@@ -102,9 +102,9 @@ async function desktop(page: Page, scenario = 'normal') {
   if (scenario === 'setup-error') {
     await expect(page.getByRole('alert')).toContainText('application data folder');
   } else if (scenario === 'runtime-required') {
-    await expect(page.getByRole('button', { name: 'Download and install' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Download models' })).toBeVisible();
   } else if (scenario === 'runtime-downloading') {
-    await expect(page.locator('#runtime-progress-label')).toHaveText('68.7 MB of 137.3 MB');
+    await expect(page.locator('#runtime-progress-label')).toHaveText('71.0 MB of 141.9 MB');
   } else if (scenario === 'checking') {
     await expect(page.locator('#history-count')).toHaveText('1');
     await expect(page.locator('#engine-label')).toHaveText('Checking engine');
@@ -222,22 +222,22 @@ test('initial model verification is neutral and automatically becomes ready', as
   await expect(page.locator('#engine-label')).toHaveText('Running offline');
 });
 
-test('missing runtime prompts for a verified first-run download', async ({ page }) => {
+test('missing models prompt for a verified first-run download', async ({ page }) => {
   await desktop(page, 'runtime-required');
-  await expect(page.getByRole('heading', { name: 'Install the local engine' })).toBeVisible();
-  await expect(page.getByText(/Whisper, FFmpeg, and two speech models/)).toBeVisible();
-  await expect(page.locator('#runtime-size')).toHaveText('Uses about 151.3 MB after installation.');
+  await expect(page.getByRole('heading', { name: 'Download the speech models' })).toBeVisible();
+  await expect(page.getByText(/Whisper and FFmpeg are included/)).toBeVisible();
+  await expect(page.locator('#runtime-size')).toHaveText('Downloads about 141.9 MB once.');
   await expect(page.getByRole('button', { name: 'Choose Video' })).not.toBeVisible();
-  await page.getByRole('button', { name: 'Download and install' }).click();
+  await page.getByRole('button', { name: 'Download models' }).click();
   await expect(page.getByRole('button', { name: 'Choose Video' })).toBeEnabled();
   await expect(page.locator('#engine-label')).toHaveText('Running offline');
-  expect(await calls(page)).toContain('install-runtime');
+  expect(await calls(page)).toContain('install-models');
 });
 
-test('runtime download progress uses compressed bytes without changing installed size', async ({ page }) => {
+test('model download progress uses the pinned model sizes', async ({ page }) => {
   await desktop(page, 'runtime-downloading');
-  await expect(page.locator('#runtime-size')).toHaveText('Uses about 151.3 MB after installation.');
-  await expect(page.locator('#runtime-progress-label')).toHaveText('68.7 MB of 137.3 MB');
+  await expect(page.locator('#runtime-size')).toHaveText('Downloads about 141.9 MB once.');
+  await expect(page.locator('#runtime-progress-label')).toHaveText('71.0 MB of 141.9 MB');
   await expect(page.locator('#runtime-progress')).toHaveJSProperty('value', 50);
 });
 

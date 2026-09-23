@@ -25,10 +25,12 @@ $cmake = Find-Tool 'cmake.exe' @('C:\Strawberry\c\bin\cmake.exe')
 $bash = Find-Tool 'bash.exe' @('C:\Program Files\Git\bin\bash.exe')
 $make = Find-Tool 'mingw32-make.exe' @('C:\Strawberry\c\bin\mingw32-make.exe')
 $gcc = Find-Tool 'gcc.exe' @('C:\Strawberry\c\bin\gcc.exe')
-$cmakeVersion = & $cmake --version | Select-Object -First 1
-if ($LASTEXITCODE) { throw 'Cannot read CMake version.' }
-$gccVersion = & $gcc --version | Select-Object -First 1
-if ($LASTEXITCODE) { throw 'Cannot read GCC version.' }
+$cmakeOutput = & $cmake --version
+if ($LASTEXITCODE -ne 0) { throw 'Cannot read CMake version.' }
+$cmakeVersion = $cmakeOutput | Select-Object -First 1
+$gccOutput = & $gcc --version
+if ($LASTEXITCODE -ne 0) { throw 'Cannot read GCC version.' }
+$gccVersion = $gccOutput | Select-Object -First 1
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
 if (-not (Test-Path $vswhere)) { throw 'Visual Studio Build Tools 2022 C++ workload is required.' }
 $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
