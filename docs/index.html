@@ -69,6 +69,10 @@
     html { scroll-behavior: smooth; }
     body {
       margin: 0;
+      min-height: 100vh;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
       background: var(--bg);
       color: var(--ink);
       font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
@@ -84,6 +88,7 @@
       border-radius: 6px;
     }
     button { font: inherit; }
+    main { flex: 1 0 auto; }
     h1, h2, h3, p { margin: 0; }
     svg { display: block; }
     .sr-only {
@@ -595,7 +600,6 @@
   <main class="container">
     <section class="hero" aria-labelledby="headline">
       <div class="hero-copy">
-        <p class="eyebrow">Windows desktop app</p>
         <h1 id="headline">Transcribe video<br>and <span class="accent">audio.</span></h1>
         <p class="lede">Local Whisper transcription for Windows. No upload.</p>
         <div class="hero-actions">
@@ -604,12 +608,11 @@
             Download for Windows
           </a>
         </div>
-        <p class="download-meta">Windows x64 · Portable ZIP · Whisper model included<br><a href="https://github.com/burkeholland/transcribe-me/releases/download/v0.1.0/SHA256SUMS.txt">SHA-256 checksums</a> · <a href="#setup">Setup</a></p>
+        <p class="download-meta">Windows x64 · Portable ZIP · Whisper model included<br><a href="https://github.com/burkeholland/transcribe-me/releases/download/v0.1.0/SHA256SUMS.txt">SHA-256 checksums</a></p>
         <p class="unsigned">This build is unsigned. Windows may show an unrecognized publisher warning. Verify the download source and checksum, and follow your organization&rsquo;s security policy.</p>
       </div>
 
       <div class="surface-wrap">
-        <div class="surface-label"><span>The app</span></div>
         <section class="app-surface" aria-label="Transcribe Me workspace example">
           <header class="surface-titlebar">
             <div class="surface-brand">
@@ -668,25 +671,11 @@
         </section>
       </div>
     </section>
-
-    <section class="workflow" id="setup" aria-labelledby="workflow-heading">
-      <div>
-        <p class="section-label">Setup</p>
-        <h2 id="workflow-heading" class="section-heading">Choose a file.<br>Get a transcript.</h2>
-        <p class="workflow-intro">Open the app, select a video or audio file, and review the generated text.</p>
-      </div>
-      <div class="workflow-list">
-        <div class="workflow-row"><span class="workflow-number">01</span><strong>Open Transcribe Me</strong><span>Extract the ZIP and run TranscribeMe.exe.</span></div>
-        <div class="workflow-row"><span class="workflow-number">02</span><strong>Choose a file</strong><span>Drop a video or audio file into the app, or browse to it.</span></div>
-        <div class="workflow-row"><span class="workflow-number">03</span><strong>Review and export</strong><span>Search the transcript or save TXT, SRT, and VTT.</span></div>
-      </div>
-    </section>
   </main>
 
   <footer class="container site-footer">
     <span>Transcribe Me - Video and audio transcription for Windows.</span>
     <nav class="footer-links" aria-label="Utility links">
-      <a href="#setup">Setup</a>
       <a href="https://github.com/burkeholland/transcribe-me/releases/download/v0.1.0/TranscribeMe-0.1.0-native-source.zip" download>Native source</a>
       <a href="https://github.com/burkeholland/transcribe-me/releases/download/v0.1.0/SHA256SUMS.txt">Checksums</a>
     </nav>

@@ -14,8 +14,6 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
     await expect(page.getByRole('link', { name: 'Download for Windows' })).toHaveAttribute('href', 'https://github.com/burkeholland/transcribe-me/releases/download/v0.1.0/TranscribeMe-0.1.0-windows-x64.zip');
     await expect(page.getByRole('link', { name: 'SHA-256 checksums' })).toHaveAttribute('href', 'https://github.com/burkeholland/transcribe-me/releases/download/v0.1.0/SHA256SUMS.txt');
     await expect(page.getByRole('link', { name: 'Native source' })).toHaveAttribute('href', 'https://github.com/burkeholland/transcribe-me/releases/download/v0.1.0/TranscribeMe-0.1.0-native-source.zip');
-    await expect(page.getByText('The app', { exact: true })).toBeVisible();
-    await expect(page.getByText('Open Transcribe Me', { exact: true })).toBeVisible();
     await expect(page.getByText('Transcription complete', { exact: true })).toBeVisible();
     await expect(page.getByText('Spoken language', { exact: true })).toBeVisible();
     await expect(page.getByText(/This build is unsigned/)).toBeVisible();
