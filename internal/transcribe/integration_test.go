@@ -16,7 +16,6 @@ import (
 func realRuntime(t *testing.T) (string, []byte) {
 	t.Helper()
 	root := os.Getenv("TRANSCRIBEME_TEST_RUNTIME_DIR")
-	manifestPath := filepath.Join("assets", "runtime-manifest.json")
 	if root == "" {
 		var err error
 		root, err = filepath.Abs(filepath.Join("..", ".."))
@@ -25,11 +24,10 @@ func realRuntime(t *testing.T) (string, []byte) {
 		}
 	} else {
 		if !filepath.IsAbs(root) {
-			t.Fatal("TRANSCRIBEME_TEST_RUNTIME_DIR must be an absolute extracted-package path")
+			t.Fatal("TRANSCRIBEME_TEST_RUNTIME_DIR must be an absolute path containing the runtime directory")
 		}
-		manifestPath = "runtime-manifest.json"
 	}
-	manifest, err := os.ReadFile(filepath.Join(root, manifestPath))
+	manifest, err := os.ReadFile(filepath.Join("..", "..", "assets", "runtime-manifest.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

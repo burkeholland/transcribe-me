@@ -75,9 +75,16 @@ func (a *App) beforeClose(ctx context.Context) bool {
 
 func (a *App) Status() transcribe.Snapshot {
 	if a.initErr != nil {
-		return transcribe.Snapshot{SetupError: a.initErr.Error(), Version: transcribe.Version, History: []transcribe.Summary{}}
+		return transcribe.Snapshot{
+			SetupError: a.initErr.Error(), RuntimeState: "failed",
+			Version: transcribe.Version, History: []transcribe.Summary{},
+		}
 	}
 	return a.service.Status()
+}
+
+func (a *App) InstallRuntime() error {
+	return a.service.InstallRuntime(a.ctx, transcribe.RuntimeArchiveURL())
 }
 
 func (a *App) ChooseFile() (*transcribe.FileInfo, error) {
@@ -127,7 +134,7 @@ func (a *App) allowMedia(path string) {
 }
 
 // mediaHandler streams a chosen file to the webview, which decodes one frame
-// into the poster thumbnail. The bundled ffmpeg is audio-only, so the webview
+// into the poster thumbnail. The local ffmpeg build is audio-only, so the webview
 // is the only frame source available without shipping a full ffmpeg build.
 func (a *App) mediaHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

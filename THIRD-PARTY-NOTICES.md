@@ -1,8 +1,9 @@
 # Third-party software and models
 
 TranscribeMe's own code is MIT licensed. The components below retain their
-original licenses. The portable package includes the full notices in
-`licenses\notices`. In the source tree those files are in `notices`.
+original licenses. The app package includes the full notices in
+`licenses\notices`; the native tools and models are delivered separately in
+the matching runtime ZIP. In the source tree those notices are in `notices`.
 
 | Component | Version | License and use |
 | --- | --- | --- |
@@ -32,7 +33,7 @@ The binaries communicate with TranscribeMe through files and command-line
 arguments, not through a linked proprietary library.
 
 Every generated release has a companion
-`TranscribeMe-0.1.0-native-source.zip` containing the exact FFmpeg source
+`TranscribeMe-0.2.0-native-source.zip` containing the exact FFmpeg source
 archive, Whisper source archive, build scripts, input hashes, and toolchain
 build receipt. Both native source trees are unmodified. The source bundle
 includes the UTF-8 Windows application manifest embedded into the built

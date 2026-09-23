@@ -3,7 +3,7 @@
 param(
     [switch]$RebuildNative,
     [ValidatePattern('^\d+\.\d+\.\d+([.-][A-Za-z0-9.-]+)?$')]
-    [string]$Version = '0.1.0'
+    [string]$Version = '0.2.0'
 )
 . (Join-Path $PSScriptRoot 'common.ps1')
 $root = Split-Path $PSScriptRoot -Parent
@@ -11,7 +11,6 @@ $go = Find-Tool 'go.exe' @('C:\Program Files\Go\bin\go.exe')
 $npm = Find-Tool 'npm.cmd'
 $wails = Find-Tool 'wails.exe' @((Join-Path $HOME 'go\bin\wails.exe'))
 $exe = Join-Path $root 'build\bin\TranscribeMe.exe'
-$manifest = Join-Path $root 'assets\runtime-manifest.json'
 $configuredVersion = (Get-Content (Join-Path $root 'wails.json') -Raw | ConvertFrom-Json).info.productVersion
 if ($Version -ne $configuredVersion) { throw "Package version $Version differs from wails.json product version $configuredVersion." }
 Push-Location $root
@@ -42,12 +41,10 @@ try {
     if (Test-Path $package) { Remove-Item -LiteralPath $package -Recurse -Force }
     New-Item -ItemType Directory -Force $package | Out-Null
     Copy-Item -LiteralPath $exe -Destination $package
-    Copy-Item -LiteralPath "$root\runtime" -Destination $package -Recurse
     Copy-Item "$root\README.md", "$root\PRIVACY.md", "$root\THIRD-PARTY-NOTICES.md" $package
     New-Item -ItemType Directory -Force "$package\licenses" | Out-Null
     Copy-Item "$root\LICENSE" "$package\licenses"
     Copy-Item "$root\notices" "$package\licenses" -Recurse
-    Copy-Item $manifest "$package\runtime-manifest.json"
     $signature = Get-AuthenticodeSignature "$package\TranscribeMe.exe"
     $goVersionText = (& $go version | Out-String).Trim()
     if ($LASTEXITCODE) { throw 'Could not record Go toolchain version.' }
@@ -60,17 +57,16 @@ try {
         "Executable Go version: $($goCheck.Binary); go.mod minimum: $($goCheck.Required)"
         "Wails: $wailsVersionText"
         'Native configuration and input hashes: companion native-source archive.'
+        'The local engine is not bundled. The app downloads the matching verified runtime on first use.'
         'Tests: go test ./...; go vet ./...; npm ci; npm test; npm run build; npm run test:e2e; verify-runtime.ps1; test-native.ps1.'
         'A passing local build is not a signed or published production release.'
     ) | Set-Content "$package\BUILD-INFO.txt" -Encoding utf8NoBOM
-    & "$PSScriptRoot\verify-runtime.ps1" -RuntimePath "$package\runtime" `
-        -ManifestPath "$package\runtime-manifest.json" -ApplicationPath "$package\TranscribeMe.exe"
-
+    $runtimeArchive = & "$PSScriptRoot\package-runtime.ps1" -Version $Version -OutputDirectory $dist
     $sourceArchive = & "$PSScriptRoot\package-native-source.ps1" -Version $Version -OutputDirectory $dist
     $zip = "$package.zip"
     if (Test-Path $zip) { Remove-Item -LiteralPath $zip -Force }
     Compress-Archive -LiteralPath $package -DestinationPath $zip -CompressionLevel Optimal
-    $archives = @((Get-Item $zip), $sourceArchive)
+    $archives = @((Get-Item $zip), $runtimeArchive, $sourceArchive)
     @($archives | ForEach-Object {
         "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())  $($_.Name)"
     }) | Set-Content "$dist\SHA256SUMS.txt" -Encoding ascii
@@ -78,6 +74,6 @@ try {
     New-Item -ItemType Directory -Force $downloads | Out-Null
     $archives | Copy-Item -Destination $downloads -Force
     Copy-Item "$dist\SHA256SUMS.txt" $downloads -Force
-    Write-Host "Portable package and corresponding source verified: $dist"
+    Write-Host "Application, downloadable runtime, and corresponding source verified: $dist"
     Write-Host "Authenticode: $($signature.Status). No public release was published."
 } finally { Pop-Location }

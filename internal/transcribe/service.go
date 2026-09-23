@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,20 +15,30 @@ import (
 )
 
 type Service struct {
-	mu       sync.Mutex
-	engine   Engine
-	store    Store
-	dataDir  string
-	snapshot Snapshot
-	cancel   context.CancelFunc
-	done     chan struct{}
+	mu            sync.Mutex
+	engine        Engine
+	store         Store
+	dataDir       string
+	snapshot      Snapshot
+	cancel        context.CancelFunc
+	done          chan struct{}
+	manifest      []byte
+	install       RuntimeInstaller
+	client        *http.Client
+	installCancel context.CancelFunc
+	installDone   chan struct{}
 }
 
 func NewService(root, dataDir string, runner Runner) *Service {
 	return &Service{
 		engine: Engine{Root: root, Run: runner}, dataDir: dataDir,
-		store:    Store{Dir: filepath.Join(dataDir, "transcripts")},
-		snapshot: Snapshot{ModelName: "Whisper base (multilingual)", Version: Version, History: []Summary{}},
+		store: Store{Dir: filepath.Join(dataDir, "transcripts")},
+		snapshot: Snapshot{
+			ModelName: "Whisper base (multilingual)", Version: Version, History: []Summary{},
+			RuntimeState: "checking", RuntimeMessage: "Checking the local transcription engine",
+		},
+		install: InstallRuntimeArchive,
+		client:  RuntimeHTTPClient(),
 	}
 }
 
@@ -55,14 +66,50 @@ func (s *Service) Initialize(ctx context.Context, manifest []byte) error {
 	if err := cleanInterruptedJobs(filepath.Join(s.dataDir, "work")); err != nil {
 		return s.failSetup(err)
 	}
-	if err := VerifyAssets(ctx, s.engine.Root, manifest); err != nil {
-		return s.failSetup(err)
-	}
 	if err := validateCPU(detectCPUFeatures()); err != nil {
 		return s.failSetup(err)
 	}
+	parsed, err := ParseManifest(manifest)
+	if err != nil {
+		return s.failSetup(err)
+	}
+	s.manifest = append([]byte(nil), manifest...)
 	s.mu.Lock()
-	s.snapshot.Ready = true
+	s.snapshot.RuntimeTotalBytes = RuntimeInstalledSize(parsed)
+	s.mu.Unlock()
+	cleanupErr := cleanInterruptedRuntimeInstall(s.dataDir)
+	recoveryErr := recoverRuntimeBackup(ctx, s.dataDir, parsed)
+	for _, root := range []string{s.dataDir, s.engine.Root} {
+		if root == "" {
+			continue
+		}
+		if err := VerifyManifest(ctx, root, parsed); err == nil {
+			if root == s.dataDir {
+				cleanupErr = errors.Join(cleanupErr, cleanReplacedRuntimeBackup(s.dataDir))
+			}
+			s.mu.Lock()
+			s.engine.Root = root
+			s.snapshot.Ready = true
+			s.snapshot.RuntimeState = "ready"
+			s.snapshot.RuntimeMessage = "Running offline"
+			if cleanupErr != nil {
+				s.snapshot.RuntimeError = cleanupErr.Error()
+			} else {
+				s.snapshot.RuntimeError = ""
+			}
+			s.mu.Unlock()
+			return nil
+		}
+	}
+	s.mu.Lock()
+	s.snapshot.Ready = false
+	s.snapshot.RuntimeState = "required"
+	s.snapshot.RuntimeMessage = "Download the local transcription engine to begin"
+	if runtimeErr := errors.Join(cleanupErr, recoveryErr); runtimeErr != nil {
+		s.snapshot.RuntimeError = runtimeErr.Error()
+	} else {
+		s.snapshot.RuntimeError = ""
+	}
 	s.mu.Unlock()
 	return nil
 }
@@ -70,8 +117,88 @@ func (s *Service) Initialize(ctx context.Context, manifest []byte) error {
 func (s *Service) failSetup(err error) error {
 	s.mu.Lock()
 	s.snapshot.SetupError = err.Error()
+	s.snapshot.RuntimeState = "failed"
 	s.mu.Unlock()
 	return err
+}
+
+func (s *Service) InstallRuntime(ctx context.Context, source string) error {
+	s.mu.Lock()
+	if s.snapshot.Ready {
+		s.mu.Unlock()
+		return nil
+	}
+	if s.installDone != nil {
+		s.mu.Unlock()
+		return errors.New("the local transcription engine is already downloading")
+	}
+	if len(s.manifest) == 0 {
+		s.mu.Unlock()
+		return errors.New("the runtime manifest is unavailable")
+	}
+	installCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	s.installCancel = cancel
+	s.installDone = done
+	s.snapshot.RuntimeState = "downloading"
+	s.snapshot.RuntimeMessage = "Downloading the local transcription engine"
+	s.snapshot.RuntimeError = ""
+	s.snapshot.RuntimeProgress = 0
+	s.snapshot.RuntimeDownloadedBytes = 0
+	s.snapshot.RuntimeDownloadTotalBytes = 0
+	manifest := append([]byte(nil), s.manifest...)
+	installer := s.install
+	client := s.client
+	s.mu.Unlock()
+	defer func() {
+		cancel()
+		close(done)
+		s.mu.Lock()
+		s.installCancel = nil
+		s.installDone = nil
+		s.mu.Unlock()
+	}()
+
+	err := installer(installCtx, client, s.dataDir, source, manifest, s.runtimeProgress)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err != nil {
+		s.snapshot.Ready = false
+		s.snapshot.RuntimeState = "failed"
+		s.snapshot.RuntimeMessage = "The local transcription engine was not installed"
+		s.snapshot.RuntimeError = err.Error()
+		return err
+	}
+	if err := VerifyAssets(installCtx, s.dataDir, manifest); err != nil {
+		s.snapshot.Ready = false
+		s.snapshot.RuntimeState = "failed"
+		s.snapshot.RuntimeMessage = "The downloaded engine could not be verified"
+		s.snapshot.RuntimeError = err.Error()
+		return err
+	}
+	s.engine.Root = s.dataDir
+	s.snapshot.Ready = true
+	s.snapshot.RuntimeState = "ready"
+	s.snapshot.RuntimeMessage = "Running offline"
+	s.snapshot.RuntimeError = ""
+	s.snapshot.RuntimeProgress = 100
+	return nil
+}
+
+func (s *Service) runtimeProgress(state string, downloaded, total int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.snapshot.RuntimeState = state
+	s.snapshot.RuntimeDownloadedBytes = downloaded
+	if total > 0 {
+		s.snapshot.RuntimeDownloadTotalBytes = total
+		s.snapshot.RuntimeProgress = min(100, float64(downloaded)/float64(total)*100)
+	}
+	if state == "installing" {
+		s.snapshot.RuntimeMessage = "Verifying and installing the local transcription engine"
+	} else {
+		s.snapshot.RuntimeMessage = "Downloading the local transcription engine"
+	}
 }
 
 func (s *Service) Status() Snapshot {
@@ -190,9 +317,16 @@ func (s *Service) Close() {
 		s.cancel()
 	}
 	done := s.done
+	if s.installCancel != nil {
+		s.installCancel()
+	}
+	installDone := s.installDone
 	s.mu.Unlock()
 	if done != nil {
 		<-done
+	}
+	if installDone != nil {
+		<-installDone
 	}
 }
 

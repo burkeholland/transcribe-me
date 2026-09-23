@@ -36,6 +36,13 @@ export interface Job {
 export interface Snapshot {
   ready: boolean;
   setupError: string;
+  runtimeState: 'checking' | 'required' | 'downloading' | 'installing' | 'ready' | 'failed';
+  runtimeMessage: string;
+  runtimeError: string;
+  runtimeProgress: number;
+  runtimeDownloadedBytes: number;
+  runtimeDownloadTotalBytes: number;
+  runtimeTotalBytes: number;
   modelName: string;
   version: string;
   job: Job | null;
@@ -45,6 +52,7 @@ export interface Snapshot {
 
 export interface AppBridge {
   Status(): Promise<Snapshot>;
+  InstallRuntime(): Promise<void>;
   ChooseFile(): Promise<FileInfo | null>;
   InspectFile(path: string): Promise<FileInfo>;
   StartTranscription(path: string, language: string): Promise<void>;

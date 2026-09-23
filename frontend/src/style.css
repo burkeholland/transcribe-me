@@ -231,6 +231,50 @@ html[data-theme='dark'] .recent-count { background: rgb(255 255 255 / 10%); }
   color: var(--ink-3);
 }
 
+.runtime-setup {
+  margin-top: 45px;
+  padding: 36px 30px 32px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--bg-sunken);
+}
+.runtime-setup-icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+.runtime-setup-icon svg { width: 26px; height: 26px; }
+.runtime-setup h2 {
+  margin-top: 20px;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.runtime-setup > p {
+  margin-top: 8px;
+  max-width: 340px;
+  color: var(--ink-3);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.runtime-setup .runtime-size { color: var(--ink-4); font-size: 12.5px; }
+.runtime-setup .button-primary { margin-top: 22px; }
+.runtime-progress-line { margin-top: 24px; display: grid; gap: 10px; }
+#runtime-progress-label { font-size: 12.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.runtime-setup .runtime-error {
+  margin-top: 18px;
+  padding: 11px 13px;
+  border-radius: 9px;
+  background: var(--bad-soft);
+  color: var(--bad);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
 .dropzone {
   margin-top: 45px;
   border: 1px dashed var(--line);

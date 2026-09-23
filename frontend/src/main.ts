@@ -53,20 +53,32 @@ app.innerHTML = `
           <ul id="history-list"></ul>
         </section>
         <div class="engine">${chipIcon}<span class="engine-text"><strong>Local Whisper</strong><span id="engine-label" role="status" aria-live="polite">Checking engine</span></span></div>
-        <p class="engine-meta"><span id="model">Whisper base multilingual</span> · <span id="version">v0.1.0</span></p>
+        <p class="engine-meta"><span id="model">Whisper base multilingual</span> · <span id="version">v0.2.0</span></p>
       </nav>
 
       <main class="picker" id="picker">
         <h1>Transcribe Me</h1>
-        <p class="lede">Turn your videos into text using a local Whisper model. Fast, private, and offline.</p>
+        <p class="lede">Turn your videos into text using a local Whisper model.</p>
+        <section id="runtime-setup" class="runtime-setup" aria-labelledby="runtime-setup-title" hidden>
+          <span class="runtime-setup-icon">${chipIcon}</span>
+          <h2 id="runtime-setup-title">Install the local engine</h2>
+          <p>Transcribe Me needs Whisper, FFmpeg, and two speech models. They are downloaded once and kept on this computer.</p>
+          <p id="runtime-size" class="runtime-size"></p>
+          <button id="install-runtime" class="button-primary" type="button">${downloadIcon}<span id="install-runtime-label">Download and install</span></button>
+          <div id="runtime-progress-line" class="runtime-progress-line" hidden>
+            <progress id="runtime-progress" max="100" aria-label="Engine download progress"></progress>
+            <span id="runtime-progress-label"></span>
+          </div>
+          <p id="runtime-error" class="runtime-error" role="alert" hidden></p>
+        </section>
         <div class="dropzone" id="dropzone">
           <span class="dropzone-icon">${mediaIcon}</span>
           <p class="dropzone-title">Drop a video here</p>
           <p class="dropzone-hint">or click to browse</p>
           <button id="choose-file" class="button-primary" type="button" disabled>${folderIcon}<span>Choose Video</span></button>
         </div>
-        <p class="supports">Supports: MP4, MOV, MKV, AVI, WEBM, M4V</p>
-        <div class="language-row">
+        <p id="supports" class="supports">Supports: MP4, MOV, MKV, AVI, WEBM, M4V</p>
+        <div id="language-row" class="language-row">
           <label for="language">Spoken language</label>
           <select id="language">${languageOptions}</select>
         </div>
@@ -135,8 +147,8 @@ app.innerHTML = `
   <div id="browser-notice" class="browser-notice" hidden>
     <span class="logo">${logoIcon}</span>
     <h1>Desktop app required</h1>
-    <p>Transcribe Me uses the local Whisper engine bundled with the Windows app. This browser page cannot open or transcribe your files.</p>
-    <p>Open <strong>TranscribeMe.exe</strong> from the fully extracted portable download. Your audio stays on your computer.</p>
+    <p>Transcribe Me uses a local Whisper engine installed by the Windows app. This browser page cannot open or transcribe your files.</p>
+    <p>Open <strong>TranscribeMe.exe</strong>. The app will offer to download its verified local engine before the first transcript.</p>
   </div>`;
 
 function el<T extends HTMLElement = HTMLElement>(id: string): T {
@@ -223,6 +235,8 @@ function updateControls(): void {
   el<HTMLButtonElement>('cancel').disabled = pending || cancelRequested || disconnected;
   el<HTMLButtonElement>('export').disabled = locked || disconnected || !exportable();
   for (const button of el('history-list').querySelectorAll('button')) button.disabled = locked || disconnected;
+  const installing = snapshot?.runtimeState === 'downloading' || snapshot?.runtimeState === 'installing';
+  el<HTMLButtonElement>('install-runtime').disabled = pending || installing || disconnected;
   text('cancel', cancelRequested ? 'Cancelling…' : 'Cancel');
 }
 
@@ -242,7 +256,7 @@ async function action(work: () => Promise<void>): Promise<void> {
 
 /* ---------- reader ---------- */
 
-// The bundled ffmpeg is an audio-only build, so the webview decodes the poster
+// The local ffmpeg build is audio-only, so the webview decodes the poster
 // frame itself from the file the user chose. Anything it cannot decode (MKV,
 // AVI, audio-only) simply keeps the placeholder art.
 function grabFrame(path: string, durationMs: number): Promise<string> {
@@ -437,6 +451,14 @@ el('dropzone').addEventListener('click', event => {
   el('choose-file').click();
 });
 
+el('install-runtime').addEventListener('click', () => {
+  if (!bridge || busy() || disconnected) return;
+  void action(async () => {
+    await bridge.InstallRuntime();
+    toast('The local transcription engine is ready.');
+  });
+});
+
 el('cancel').addEventListener('click', () => {
   if (!bridge || !isActive(snapshot?.job) || cancelRequested || pending) return;
   void action(async () => {
@@ -575,6 +597,36 @@ function renderJob(): void {
   if (!head) el('empty-state').hidden = Boolean(transcript);
 }
 
+function renderRuntime(): void {
+  if (!snapshot) return;
+  const state = snapshot.runtimeState || (snapshot.ready ? 'ready' : 'checking');
+  const active = state === 'downloading' || state === 'installing';
+  const showSetup = !snapshot.ready && !snapshot.setupError && state !== 'checking';
+  el('runtime-setup').hidden = !showSetup;
+  el('dropzone').hidden = showSetup;
+  el('supports').hidden = showSetup;
+  el('language-row').hidden = showSetup;
+  el('install-runtime').hidden = active;
+  text('install-runtime-label', state === 'failed' ? 'Retry download' : 'Download and install');
+  const installedSize = snapshot.runtimeTotalBytes > 0 ? fileSize(snapshot.runtimeTotalBytes) : '';
+  text('runtime-size', installedSize ? `Uses about ${installedSize} after installation.` : '');
+  const progressLine = el('runtime-progress-line');
+  progressLine.hidden = !active;
+  if (active) {
+    const progress = el<HTMLProgressElement>('runtime-progress');
+    if (state === 'installing' || snapshot.runtimeProgress <= 0) {
+      progress.removeAttribute('value');
+    } else {
+      progress.value = progressPercent(snapshot.runtimeProgress);
+    }
+    const downloaded = snapshot.runtimeDownloadedBytes > 0 ? fileSize(snapshot.runtimeDownloadedBytes) : '';
+    const total = snapshot.runtimeDownloadTotalBytes > 0 ? fileSize(snapshot.runtimeDownloadTotalBytes) : '';
+    text('runtime-progress-label', state === 'installing' ? 'Installing' : downloaded && total ? `${downloaded} of ${total}` : 'Downloading');
+  }
+  el('runtime-error').hidden = !snapshot.runtimeError;
+  text('runtime-error', snapshot.runtimeError || '');
+}
+
 async function poll(): Promise<void> {
   if (stopped || !bridge) return;
   try {
@@ -583,11 +635,21 @@ async function poll(): Promise<void> {
     disconnected = false;
     snapshot = next;
     if (awaitingStart && next.job && next.job.id !== startPreviousJobID) awaitingStart = false;
-    text('engine-label', next.ready ? 'Running offline' : next.setupError ? 'Engine unavailable' : 'Checking engine');
-    text('version', `v${next.version || '0.1.0'}`);
+    const engineLabel: Record<string, string> = {
+      checking: 'Checking engine',
+      required: 'Download required',
+      downloading: `Downloading ${progressPercent(next.runtimeProgress || 0)}%`,
+      installing: 'Installing engine',
+      failed: 'Setup failed',
+      ready: 'Running offline',
+    };
+    text('engine-label', next.setupError ? 'Engine unavailable' : engineLabel[next.runtimeState] || 'Checking engine');
+    text('version', `v${next.version || '0.2.0'}`);
     text('model', next.modelName || 'Whisper base multilingual');
-    el('service-error').hidden = !next.setupError;
-    text('service-error', next.setupError || '');
+    const serviceError = next.setupError || (next.ready ? next.runtimeError : '');
+    el('service-error').hidden = !serviceError;
+    text('service-error', serviceError);
+    renderRuntime();
     renderJob();
     renderHistory();
     updateControls();

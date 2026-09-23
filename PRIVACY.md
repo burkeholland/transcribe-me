@@ -3,7 +3,8 @@
 TranscribeMe processes media on your Windows PC. It does not upload your
 recordings, extracted audio, or transcripts, and has no account, analytics,
 telemetry, or cloud transcription service. Its Whisper speech model and Silero
-voice activity model are included in the portable download.
+voice activity model are downloaded only after you select **Download and
+install** in the app.
 
 ## Files on your computer
 
@@ -26,12 +27,21 @@ Delete sensitive output when it is no longer needed.
 
 ## Internet and Windows components
 
-Transcription itself works offline. Microsoft Edge WebView2 is the Windows
-component used to display the interface. Most Windows 10 and Windows 11
-systems already include it. On a system without it, the embedded Microsoft
-bootstrapper needs an internet connection to install WebView2. Its
-installation and servicing are governed by Microsoft's terms and privacy
-policy, not this app's offline transcription behavior.
+The first-run engine installer downloads a versioned ZIP from this project's
+GitHub release. That ZIP contains Whisper, FFmpeg, the Whisper base model, and
+the VAD model. GitHub and its download infrastructure receive ordinary network
+request information such as your IP address and user agent. The request does
+not contain your recordings, transcripts, or filenames. The app verifies every
+runtime file against SHA-256 hashes embedded in the executable, installs the
+files under `%LOCALAPPDATA%\TranscribeMe\runtime`, and removes the downloaded
+ZIP after installation.
+
+Transcription itself works offline after the engine is installed. Microsoft
+Edge WebView2 is the Windows component used to display the interface. Most
+Windows 10 and Windows 11 systems already include it. On a system without it,
+the embedded Microsoft bootstrapper needs an internet connection to install
+WebView2. Its installation and servicing are governed by Microsoft's terms and
+privacy policy, not this app's offline transcription behavior.
 
 Build tools download source code, dependencies, and model files when a
 developer builds the application. Those downloads do not contain user media.

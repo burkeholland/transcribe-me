@@ -12,8 +12,8 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
     await expect(page.getByRole('heading', { level: 1 })).toContainText('Transcribe video');
     await expect(page.getByRole('heading', { level: 1 })).toContainText('audio.');
     await expect(page.getByRole('link', { name: 'GitHub', exact: true })).toHaveAttribute('href', 'https://github.com/burkeholland/transcribe-me');
-    await expect(page.getByRole('link', { name: 'Download for Windows' })).toHaveAttribute('href', 'https://github.com/burkeholland/transcribe-me/releases/download/v0.1.0/TranscribeMe-0.1.0-windows-x64.zip');
-    await expect(page.getByRole('link', { name: 'SHA-256 checksums' })).toHaveAttribute('href', 'https://github.com/burkeholland/transcribe-me/releases/download/v0.1.0/SHA256SUMS.txt');
+    await expect(page.getByRole('link', { name: 'Download for Windows' })).toHaveAttribute('href', 'https://github.com/burkeholland/transcribe-me/releases/download/v0.2.0/TranscribeMe-0.2.0-windows-x64.zip');
+    await expect(page.getByRole('link', { name: 'SHA-256 checksums' })).toHaveAttribute('href', 'https://github.com/burkeholland/transcribe-me/releases/download/v0.2.0/SHA256SUMS.txt');
     await expect(page.locator('footer a')).toHaveCount(0);
     await expect(page.getByText('Transcription complete', { exact: true })).toBeVisible();
     await expect(page.getByText('Spoken language', { exact: true })).toBeVisible();

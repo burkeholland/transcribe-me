@@ -1,6 +1,6 @@
 package transcribe
 
-const Version = "0.1.0"
+const Version = "0.2.0"
 
 type FileInfo struct {
 	Path       string `json:"path"`
@@ -45,13 +45,20 @@ type Job struct {
 }
 
 type Snapshot struct {
-	Ready          bool      `json:"ready"`
-	SetupError     string    `json:"setupError"`
-	HistoryWarning string    `json:"historyWarning"`
-	ModelName      string    `json:"modelName"`
-	Version        string    `json:"version"`
-	Job            *Job      `json:"job"`
-	History        []Summary `json:"history"`
+	Ready                     bool      `json:"ready"`
+	SetupError                string    `json:"setupError"`
+	HistoryWarning            string    `json:"historyWarning"`
+	RuntimeState              string    `json:"runtimeState"`
+	RuntimeMessage            string    `json:"runtimeMessage"`
+	RuntimeError              string    `json:"runtimeError"`
+	RuntimeProgress           float64   `json:"runtimeProgress"`
+	RuntimeDownloadedBytes    int64     `json:"runtimeDownloadedBytes"`
+	RuntimeDownloadTotalBytes int64     `json:"runtimeDownloadTotalBytes"`
+	RuntimeTotalBytes         int64     `json:"runtimeTotalBytes"`
+	ModelName                 string    `json:"modelName"`
+	Version                   string    `json:"version"`
+	Job                       *Job      `json:"job"`
+	History                   []Summary `json:"history"`
 }
 
 func (j *Job) active() bool {

@@ -28,6 +28,14 @@ type Engine struct {
 	Run  Runner
 }
 
+var requiredRuntimeAssets = map[string]bool{
+	"runtime/whisper/whisper-cli.exe":       false,
+	"runtime/ffmpeg/bin/ffmpeg.exe":         false,
+	"runtime/ffmpeg/bin/ffprobe.exe":        false,
+	"runtime/models/ggml-base.bin":          false,
+	"runtime/models/ggml-silero-v5.1.2.bin": false,
+}
+
 func (e Engine) tool(name string) string {
 	switch name {
 	case "whisper":
@@ -42,37 +50,65 @@ func (e Engine) tool(name string) string {
 }
 
 func VerifyAssets(ctx context.Context, root string, data []byte) error {
+	m, err := ParseManifest(data)
+	if err != nil {
+		return err
+	}
+	return VerifyManifest(ctx, root, m)
+}
+
+func ParseManifest(data []byte) (Manifest, error) {
 	var m Manifest
 	if err := json.Unmarshal(data, &m); err != nil {
-		return fmt.Errorf("read runtime manifest: %w", err)
+		return m, fmt.Errorf("read runtime manifest: %w", err)
 	}
-	required := map[string]bool{
-		"runtime/whisper/whisper-cli.exe":       false,
-		"runtime/ffmpeg/bin/ffmpeg.exe":         false,
-		"runtime/ffmpeg/bin/ffprobe.exe":        false,
-		"runtime/models/ggml-base.bin":          false,
-		"runtime/models/ggml-silero-v5.1.2.bin": false,
+	found := make(map[string]bool, len(requiredRuntimeAssets))
+	for name := range requiredRuntimeAssets {
+		found[name] = false
 	}
 	for _, asset := range m.Files {
+		if !filepath.IsLocal(filepath.FromSlash(asset.Path)) || !strings.HasPrefix(asset.Path, "runtime/") ||
+			asset.Size <= 0 {
+			return m, errors.New("invalid runtime manifest entry")
+		}
+		hash, err := hex.DecodeString(asset.SHA256)
+		if err != nil || len(hash) != sha256.Size || hex.EncodeToString(hash) != asset.SHA256 {
+			return m, errors.New("invalid runtime manifest entry")
+		}
+		if _, duplicate := found[asset.Path]; duplicate && found[asset.Path] {
+			return m, fmt.Errorf("duplicate runtime manifest path: %s", asset.Path)
+		}
+		if _, ok := found[asset.Path]; !ok {
+			return m, fmt.Errorf("unexpected runtime manifest path: %s", asset.Path)
+		}
+		found[asset.Path] = true
+	}
+	for name, present := range found {
+		if !present {
+			return m, fmt.Errorf("runtime manifest is missing %s", name)
+		}
+	}
+	return m, nil
+}
+
+func VerifyManifest(ctx context.Context, root string, manifest Manifest) error {
+	for _, asset := range manifest.Files {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if !filepath.IsLocal(asset.Path) || !strings.HasPrefix(asset.Path, "runtime/") {
-			return errors.New("invalid runtime manifest path")
-		}
 		if err := verifyAsset(root, asset); err != nil {
-			return fmt.Errorf("runtime is missing or damaged (%s): %w. Extract the complete download again", asset.Path, err)
-		}
-		if _, ok := required[asset.Path]; ok {
-			required[asset.Path] = true
-		}
-	}
-	for name, found := range required {
-		if !found {
-			return fmt.Errorf("runtime manifest is missing %s; run scripts\\fetch-runtime.ps1 and rebuild", name)
+			return fmt.Errorf("runtime is missing or damaged (%s): %w", asset.Path, err)
 		}
 	}
 	return nil
+}
+
+func RuntimeInstalledSize(manifest Manifest) int64 {
+	var total int64
+	for _, asset := range manifest.Files {
+		total += asset.Size
+	}
+	return total
 }
 
 func verifyAsset(root string, asset Asset) error {
