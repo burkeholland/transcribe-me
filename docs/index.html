@@ -146,6 +146,12 @@
     }
     .theme:hover { background: color-mix(in srgb, var(--ink) 7%, transparent); }
     .theme svg { width: 18px; height: 18px; }
+    .github-link {
+      color: var(--ink-3);
+      font-size: 12px;
+      text-decoration: none;
+    }
+    .github-link:hover { color: var(--accent-ink); }
 
     .hero {
       display: grid;
@@ -532,8 +538,6 @@
       font-size: 11px;
       line-height: 1.7;
     }
-    .footer-links { display: flex; flex-wrap: wrap; gap: 18px; }
-    .site-footer a { color: var(--ink-3); }
 
     @media (max-width: 1050px) {
       .hero, .workflow { gap: 32px; }
@@ -592,6 +596,7 @@
         <span>Transcribe<span class="brand-light"> Me</span></span>
       </a>
       <div class="header-tools">
+        <a class="github-link" href="https://github.com/burkeholland/transcribe-me">GitHub</a>
         <button class="theme" id="theme" type="button" aria-label="Switch to dark theme" title="Switch to dark theme"></button>
       </div>
     </div>
@@ -675,10 +680,6 @@
 
   <footer class="container site-footer">
     <span>Transcribe Me - Video and audio transcription for Windows.</span>
-    <nav class="footer-links" aria-label="Utility links">
-      <a href="https://github.com/burkeholland/transcribe-me/releases/download/v0.1.0/TranscribeMe-0.1.0-native-source.zip" download>Native source</a>
-      <a href="https://github.com/burkeholland/transcribe-me/releases/download/v0.1.0/SHA256SUMS.txt">Checksums</a>
-    </nav>
   </footer>
 
   <script>
