@@ -3,7 +3,9 @@
 param(
     [switch]$RebuildNative,
     [ValidatePattern('^\d+\.\d+\.\d+([.-][A-Za-z0-9.-]+)?$')]
-    [string]$Version = '0.3.0'
+    [string]$Version = '0.3.0',
+    [switch]$Msix,
+    [string]$StoreIdentity
 )
 . (Join-Path $PSScriptRoot 'common.ps1')
 $root = Split-Path $PSScriptRoot -Parent
@@ -13,6 +15,12 @@ $wails = Find-Tool 'wails.exe' @((Join-Path $HOME 'go\bin\wails.exe'))
 $exe = Join-Path $root 'build\bin\TranscribeMe.exe'
 $configuredVersion = (Get-Content (Join-Path $root 'wails.json') -Raw | ConvertFrom-Json).info.productVersion
 if ($Version -ne $configuredVersion) { throw "Package version $Version differs from wails.json product version $configuredVersion." }
+$buildMsix = $Msix -or [bool]$StoreIdentity
+if ($buildMsix) {
+    if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'An MSIX package needs a numeric major.minor.patch version.' }
+    if ($StoreIdentity) { $StoreIdentity = (Resolve-Path -LiteralPath $StoreIdentity).Path }
+    $null = Get-MsixIdentity $StoreIdentity
+}
 Push-Location $root
 try {
     $goCheck = & "$PSScriptRoot\verify-go-toolchain.ps1" -GoCommand $go
@@ -77,6 +85,9 @@ try {
     New-Item -ItemType Directory -Force $downloads | Out-Null
     $archives | Copy-Item -Destination $downloads -Force
     Copy-Item "$dist\SHA256SUMS.txt" $downloads -Force
+    if ($buildMsix) {
+        $null = & "$PSScriptRoot\package-msix.ps1" -Version $Version -AppDirectory $package -StoreIdentity $StoreIdentity -OutputDirectory $dist
+    }
     Write-Host "Application with bundled native tools and corresponding source verified: $dist"
     Write-Host "Authenticode: $($signature.Status). No public release was published."
 } finally { Pop-Location }

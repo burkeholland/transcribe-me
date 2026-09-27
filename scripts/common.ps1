@@ -19,6 +19,56 @@ function Find-Tool {
     throw "Required build tool not found: $Name. See README.md for build prerequisites."
 }
 
+function Get-PackagePublisherId {
+    param([string]$Publisher)
+    # Windows derives the package family suffix from the first 64 bits of SHA-256(UTF-16LE publisher).
+    $hash = [Security.Cryptography.SHA256]::HashData([Text.Encoding]::Unicode.GetBytes($Publisher))
+    $bits = (-join ($hash[0..7] | ForEach-Object { [Convert]::ToString($_, 2).PadLeft(8, '0') })) + '0'
+    $alphabet = '0123456789abcdefghjkmnpqrstvwxyz'
+    -join (0..12 | ForEach-Object { $alphabet[[Convert]::ToInt32($bits.Substring($_ * 5, 5), 2)] })
+}
+
+function Get-MsixIdentity {
+    param([string]$Path)
+    if (-not $Path) {
+        $publisher = 'CN=Burke Holland'
+        return [pscustomobject]@{
+            Store = $false
+            IdentityName = 'BurkeHolland.TranscribeMe.Development'
+            Publisher = $publisher
+            PublisherDisplayName = 'Burke Holland'
+            DisplayName = 'TranscribeMe Development'
+            PackageFamilyName = "BurkeHolland.TranscribeMe.Development_$(Get-PackagePublisherId $publisher)"
+        }
+    }
+    $json = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+    $values = @{}
+    foreach ($field in 'identityName', 'publisher', 'publisherDisplayName', 'displayName', 'packageFamilyName') {
+        $property = $json.PSObject.Properties[$field]
+        $value = if ($property) { $property.Value } else { $null }
+        if ($value -isnot [string] -or -not $value.Trim() -or $value -cne $value.Trim() -or $value.Length -gt 256) {
+            throw "Store identity file needs '$field' copied exactly from Partner Center Product identity."
+        }
+        $values[$field] = $value
+    }
+    if ($values.identityName -notmatch '^[A-Za-z0-9][A-Za-z0-9.-]{2,49}$' -or $values.identityName -match '\.Development$') {
+        throw "Invalid Store package identity name: $($values.identityName)"
+    }
+    if ($values.publisher -notmatch '^CN=.+') { throw 'Store publisher must be the complete CN=... value from Partner Center.' }
+    $family = "$($values.identityName)_$(Get-PackagePublisherId $values.publisher)"
+    if ($family -cne $values.packageFamilyName) {
+        throw "Identity name and publisher produce package family $family, not $($values.packageFamilyName). Copy both from Partner Center exactly."
+    }
+    [pscustomobject]@{
+        Store = $true
+        IdentityName = $values.identityName
+        Publisher = $values.publisher
+        PublisherDisplayName = $values.publisherDisplayName
+        DisplayName = $values.displayName
+        PackageFamilyName = $family
+    }
+}
+
 function Get-VerifiedAsset {
     param($Asset, [string]$Destination)
     if ((Test-Path -LiteralPath $Destination) -and

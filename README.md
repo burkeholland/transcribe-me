@@ -51,6 +51,8 @@ detects changes; it does not authenticate an unsigned publisher.
   dictation. Review the result. Noise, accents, overlapping voices, and music
   can reduce accuracy. There are no speaker labels.
 - Transcripts are stored in `%LOCALAPPDATA%\TranscribeMe\transcripts`.
+  The Microsoft Store version may keep them in its private package folder
+  instead; see [PRIVACY.md](PRIVACY.md#microsoft-store-version).
   They persist until deleted and are not encrypted by the app.
   Damaged history files are preserved and reported without blocking new work.
   Healthy saved transcripts remain available even if the engine is damaged.
@@ -75,8 +77,8 @@ Go's normal automatic toolchain selection can download the required version.
 If automatic selection is disabled, install a compatible patched toolchain
 yourself. Packaging checks both the selected compiler and the Go version
 recorded inside `TranscribeMe.exe`; an older prebuilt binary is rejected.
-Packaging always builds current frontend and Go sources. There is no
-package-only shortcut.
+Packaging always builds current frontend and Go sources. The only package-only
+step is wrapping an already verified release in an MSIX, described below.
 
 ```powershell
 .\scripts\build.ps1
@@ -133,6 +135,51 @@ manifest, so rebuild the application immediately afterward.
 Reproducible here means pinned inputs and explicit configuration. MSVC,
 MinGW, Go, Node, and Wails versions affect binary bytes; cross-toolchain
 bit-for-bit reproducibility is not claimed.
+
+### Microsoft Store package (MSIX)
+
+`.\scripts\build.ps1 -Msix` also creates
+`dist\TranscribeMe-0.3.0-windows-x64-development.msix`, an unsigned package
+with a local development identity. To try it under package identity, turn on
+Windows Developer Mode and register the unpacked copy that the script
+verified. Remove it before packaging again, because packaging replaces that
+folder.
+
+```powershell
+Add-AppxPackage -Register .\build\msix\development\verification\AppxManifest.xml
+Get-AppxPackage BurkeHolland.TranscribeMe.Development | Remove-AppxPackage
+```
+
+For a Store upload, copy the values from Partner Center's **Product identity**
+page into a JSON file with `identityName`, `publisher`,
+`publisherDisplayName`, `displayName` (the reserved product name), and
+`packageFamilyName`, then run `.\scripts\build.ps1 -StoreIdentity <file>`.
+Keep that file out of the repository; `packaging\msix\store-identity.json` is
+ignored. The script checks that the identity name and publisher produce the
+given package family name. Store packages stay unsigned because Microsoft
+signs them after certification.
+
+To package a published release without rebuilding it, extract the app ZIP
+after checking it against `SHA256SUMS.txt`. Put
+`TranscribeMe-0.3.0-native-source.zip` and `SHA256SUMS.txt` next to the
+extracted folder, then run:
+
+```powershell
+.\scripts\package-msix.ps1 -AppDirectory <extracted folder> [-StoreIdentity <file>] [-OutputDirectory <folder>]
+```
+
+The script checks the executable's version and Go toolchain, the bundled
+tools against the app's integrity manifest, and the source archive against
+both `SHA256SUMS.txt` and the tool hashes recorded inside it. The MSIX holds
+the app, the native tools, the licenses folder, `PRIVACY.md`,
+`THIRD-PARTY-NOTICES.md`, `SOURCE.txt`, and the native-source archive under
+`source`. It declares only `runFullTrust` and requires Windows 10 22H2
+(build 19045) or later. The package version adds 1 to the first number
+(0.3.0 becomes 1.3.0.0) because MSIX needs a nonzero first number and the
+Store reserves the fourth. Every package is unpacked and compared file by
+file, and a JSON receipt with its hashes is written next to the MSIX. See
+[PRIVACY.md](PRIVACY.md#microsoft-store-version) for where the packaged app
+stores data.
 
 ## Test with a real recording
 
