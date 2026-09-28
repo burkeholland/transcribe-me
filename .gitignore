@@ -8,5 +8,6 @@
 /runtime/
 /dist/
 /docs/downloads/
+/packaging/msix/store-identity.json
 *.syso
 /coverage.out

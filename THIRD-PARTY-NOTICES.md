@@ -1,8 +1,8 @@
 # Third-party software and models
 
 TranscribeMe's own code is MIT licensed. The components below retain their
-original licenses. The app package includes the full notices in
-`licenses\notices` and the native tools under `runtime`. The two models are
+original licenses. The app ZIP and the Microsoft Store package include the
+full notices in `licenses\notices` and the native tools under `runtime`. The two models are
 downloaded from their upstream Hugging Face repositories after confirmation.
 In the source tree those notices are in `notices`.
 
@@ -44,11 +44,19 @@ binary archive with equal access, retain both checksums in `SHA256SUMS.txt`, and
 retain these license notices. This is actual corresponding source provision,
 not a promise to locate source later.
 
+The Microsoft Store package carries that same archive inside the package as
+`source\TranscribeMe-0.3.0-native-source.zip`, and the package's `SOURCE.txt`
+records its SHA-256. The MSIX packaging script refuses to build unless the
+archive matches its published checksum and records the exact FFmpeg and
+Whisper executables being packaged.
+
 You may modify, rebuild, replace, and redistribute FFmpeg under its LGPL
 terms. Nothing in TranscribeMe's license restricts reverse engineering for
 debugging modifications to LGPL components. Since the app embeds integrity
 hashes, rebuild the app after replacing a runtime binary. The provided build
-scripts regenerate the manifest before building the app.
+scripts regenerate the manifest before building the app. Windows keeps the
+files of an installed Store package read-only, so run modified tools from a
+rebuilt copy of the app.
 
 Compiler system libraries are supplied by their respective toolchains. The
 FFmpeg source is built with MinGW-w64 GCC and its static runtime under the GCC

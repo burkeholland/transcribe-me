@@ -25,9 +25,33 @@ user-profile permissions and any disk encryption you have enabled. Other
 software or administrators with access to your profile may read them.
 Delete sensitive output when it is no longer needed.
 
+## Microsoft Store version
+
+The Microsoft Store version processes media the same way. Windows chooses
+where its files are stored:
+
+- On a PC that has never run the ZIP version, Windows keeps the models,
+  transcripts, working audio, and interface settings in the app's private
+  folder under `%LOCALAPPDATA%\Packages`. Uninstalling the app deletes that
+  folder, including saved transcripts. Export any transcript you want to keep
+  before you uninstall.
+- If the ZIP version ran on the PC before, the Store version keeps using the
+  existing `%LOCALAPPDATA%\TranscribeMe` folder and the
+  `%APPDATA%\TranscribeMe.exe` folder, where WebView2 keeps interface
+  settings. New transcripts are saved there too. Uninstalling the Store
+  version leaves both folders in place. Delete them yourself if you no longer
+  need them.
+
+Microsoft delivers and updates the Store version. Through Partner Center,
+Microsoft gives the developer aggregate reports about it, such as installs,
+usage, and crashes. Windows collects that information under the Microsoft
+Privacy Statement and your Windows diagnostic data settings. TranscribeMe
+itself sends no analytics or telemetry.
+
 ## Internet and Windows components
 
-Whisper CLI and the offline FFmpeg tools are included in the application ZIP.
+Whisper CLI and the offline FFmpeg tools are included in the application ZIP
+and the Microsoft Store package.
 On first run, the app downloads the Whisper base and VAD model files from
 immutable revisions of their upstream Hugging Face repositories. Hugging Face
 and its CDN receive ordinary network request information such as your IP
