@@ -132,7 +132,7 @@ foreach ($size in 16, 24, 32, 48, 256) {
 $source = [Drawing.Image]::FromFile($icon)
 $attributes = [Drawing.Imaging.ImageAttributes]::new()
 try {
-    # Mirrored edge sampling keeps the full-bleed icon from fading at its borders when scaled down.
+    # Mirrored edge sampling keeps anything that touches the icon's edges from fading when scaled down.
     $attributes.SetWrapMode([Drawing.Drawing2D.WrapMode]::TileFlipXY)
     foreach ($name in $assets.Keys) {
         $size = $assets[$name]

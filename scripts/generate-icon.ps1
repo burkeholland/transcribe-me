@@ -6,22 +6,19 @@ $root = Split-Path $PSScriptRoot -Parent
 New-Item -ItemType Directory -Force (Join-Path $root 'build') | Out-Null
 $bitmap = [Drawing.Bitmap]::new(1024, 1024)
 $graphics = [Drawing.Graphics]::FromImage($bitmap)
-$background = [Drawing.SolidBrush]::new([Drawing.Color]::FromArgb(255, 22, 26, 34))
-$accent = [Drawing.Pen]::new([Drawing.Color]::FromArgb(255, 128, 232, 182), 52)
-$text = [Drawing.Pen]::new([Drawing.Color]::FromArgb(255, 243, 243, 234), 45)
+# The app icon is the in-app logo: logoIcon in frontend/src/main.ts, drawn in the light theme accent
+# on a transparent background. Each bar is an SVG "M x y v length" path in its 32-unit viewBox.
+$scale = 1024 / 32
+$accent = [Drawing.Pen]::new([Drawing.Color]::FromArgb(255, 37, 99, 235), [single](2.6 * $scale))
 try {
     $graphics.SmoothingMode = [Drawing.Drawing2D.SmoothingMode]::AntiAlias
-    $graphics.FillRectangle($background, 0, 0, 1024, 1024)
+    $graphics.Clear([Drawing.Color]::Transparent)
     $accent.StartCap = $accent.EndCap = [Drawing.Drawing2D.LineCap]::Round
-    $text.StartCap = $text.EndCap = [Drawing.Drawing2D.LineCap]::Round
-    $heights = @(110, 230, 370, 250, 135)
-    for ($i = 0; $i -lt $heights.Count; $i++) {
-        $x = 170 + $i * 78
-        $graphics.DrawLine($accent, $x, [single](512 - $heights[$i] / 2), $x, [single](512 + $heights[$i] / 2))
+    $bars = @(@(2.6, 13, 6), @(8.2, 9.5, 13), @(13.8, 4, 24), @(19.4, 8, 16), @(25, 5.5, 21), @(29.4, 13, 6))
+    foreach ($bar in $bars) {
+        $x = [single]($bar[0] * $scale)
+        $graphics.DrawLine($accent, $x, [single]($bar[1] * $scale), $x, [single](($bar[1] + $bar[2]) * $scale))
     }
-    $graphics.DrawLine($text, 630, 365, 850, 365)
-    $graphics.DrawLine($text, 630, 510, 800, 510)
-    $graphics.DrawLine($text, 630, 655, 755, 655)
     $bitmap.Save((Join-Path $root 'build\appicon.png'), [Drawing.Imaging.ImageFormat]::Png)
     $sizes = @(16, 32, 48, 64, 128, 256)
     $images = [Collections.Generic.List[byte[]]]::new()
@@ -52,6 +49,6 @@ try {
         foreach ($image in $images) { $writer.Write($image) }
     } finally { $writer.Dispose() }
 } finally {
-    $graphics.Dispose(); $bitmap.Dispose(); $background.Dispose(); $accent.Dispose(); $text.Dispose()
+    $graphics.Dispose(); $bitmap.Dispose(); $accent.Dispose()
 }
-Write-Host 'Generated original waveform-to-text icons: build\appicon.png and build\windows\icon.ico'
+Write-Host 'Generated waveform icons: build\appicon.png and build\windows\icon.ico'
