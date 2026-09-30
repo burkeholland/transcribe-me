@@ -8,10 +8,10 @@ offline FFmpeg tools are included in the application download.
 
 ## Install and run
 
-1. Download `TranscribeMe-0.3.0-windows-x64.zip` from the project's release
+1. Download `TranscribeMe-0.3.1-windows-x64.zip` from the project's release
    page.
 2. Optionally compare the download's SHA-256 with `SHA256SUMS.txt`:
-   `Get-FileHash .\TranscribeMe-0.3.0-windows-x64.zip -Algorithm SHA256`.
+   `Get-FileHash .\TranscribeMe-0.3.1-windows-x64.zip -Algorithm SHA256`.
 3. Use **Extract All**, then open `TranscribeMe.exe`.
 4. Select **Download models** when prompted. The app downloads the pinned
    Whisper base and VAD models into `%LOCALAPPDATA%\TranscribeMe\runtime\models`.
@@ -104,9 +104,9 @@ Source downloads and build intermediates live under `build\native`.
 The final output is:
 
 ```text
-dist\TranscribeMe-0.3.0-windows-x64\
-dist\TranscribeMe-0.3.0-windows-x64.zip
-dist\TranscribeMe-0.3.0-native-source.zip
+dist\TranscribeMe-0.3.1-windows-x64\
+dist\TranscribeMe-0.3.1-windows-x64.zip
+dist\TranscribeMe-0.3.1-native-source.zip
 dist\SHA256SUMS.txt
 ```
 
@@ -139,7 +139,7 @@ bit-for-bit reproducibility is not claimed.
 ### Microsoft Store package (MSIX)
 
 `.\scripts\build.ps1 -Msix` also creates
-`dist\TranscribeMe-0.3.0-windows-x64-development.msix`, an unsigned package
+`dist\TranscribeMe-0.3.1-windows-x64-development.msix`, an unsigned package
 with a local development identity. To try it under package identity, turn on
 Windows Developer Mode and register the unpacked copy that the script
 verified. Remove it before packaging again, because packaging replaces that
@@ -161,7 +161,7 @@ signs them after certification.
 
 To package a published release without rebuilding it, extract the app ZIP
 after checking it against `SHA256SUMS.txt`. Put
-`TranscribeMe-0.3.0-native-source.zip` and `SHA256SUMS.txt` next to the
+`TranscribeMe-0.3.1-native-source.zip` and `SHA256SUMS.txt` next to the
 extracted folder, then run:
 
 ```powershell
@@ -175,7 +175,7 @@ the app, the native tools, the licenses folder, `PRIVACY.md`,
 `THIRD-PARTY-NOTICES.md`, `SOURCE.txt`, and the native-source archive under
 `source`. It declares only `runFullTrust` and requires Windows 10 22H2
 (build 19045) or later. The package version adds 1 to the first number
-(0.3.0 becomes 1.3.0.0) because MSIX needs a nonzero first number and the
+(0.3.1 becomes 1.3.1.0) because MSIX needs a nonzero first number and the
 Store reserves the fourth. Every package is unpacked and compared file by
 file, and a JSON receipt with its hashes is written next to the MSIX. See
 [PRIVACY.md](PRIVACY.md#microsoft-store-version) for where the packaged app
@@ -198,7 +198,7 @@ containing `TranscribeMe.exe` and the data variable at the folder containing
 the downloaded `runtime\models` directory:
 
 ```powershell
-$env:TRANSCRIBEME_TEST_RUNTIME_DIR = (Resolve-Path '.\dist\TranscribeMe-0.3.0-windows-x64').Path
+$env:TRANSCRIBEME_TEST_RUNTIME_DIR = (Resolve-Path '.\dist\TranscribeMe-0.3.1-windows-x64').Path
 $env:TRANSCRIBEME_TEST_DATA_DIR = (Resolve-Path "$env:LOCALAPPDATA\TranscribeMe").Path
 go test .\internal\transcribe -run '^TestReal' -v -count=1 -timeout 15m
 ```

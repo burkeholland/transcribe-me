@@ -6,7 +6,7 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '0.3.0',
+    [string]$Version = '0.3.1',
     [string]$AppDirectory,
     [string]$NativeSourceArchive,
     [string]$StoreIdentity,
@@ -20,7 +20,7 @@ $configuredVersion = (Get-Content (Join-Path $root 'wails.json') -Raw | ConvertF
 if ($Version -ne $configuredVersion) { throw "Package version $Version differs from wails.json product version $configuredVersion." }
 $parts = @($Version.Split('.') | ForEach-Object { [int]$_ })
 if ($parts[0] -ge 65535 -or $parts[1] -gt 65535 -or $parts[2] -gt 65535) { throw "Version $Version cannot be mapped to an MSIX version." }
-# MSIX needs a nonzero first number and the Store reserves the fourth, so 0.3.0 becomes 1.3.0.0.
+# MSIX needs a nonzero first number and the Store reserves the fourth, so 0.3.1 becomes 1.3.1.0.
 $packageVersion = '{0}.{1}.{2}.0' -f ($parts[0] + 1), $parts[1], $parts[2]
 if ($StoreIdentity) { $StoreIdentity = (Resolve-Path -LiteralPath $StoreIdentity).Path }
 $identity = Get-MsixIdentity $StoreIdentity

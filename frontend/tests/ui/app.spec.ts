@@ -41,7 +41,7 @@ async function desktop(page: Page, scenario = 'normal') {
       runtimeDownloadedBytes: scenario === 'runtime-downloading' ? 74_418_282 : 0,
       runtimeDownloadTotalBytes: scenario === 'runtime-downloading' ? 148_836_563 : 0,
       runtimeTotalBytes: 148_836_563,
-      modelName: 'Whisper base multilingual', version: '0.3.0', job: null, history: [transcript],
+      modelName: 'Whisper base multilingual', version: '0.3.1', job: null, history: [transcript],
       historyWarning: scenario === 'history-warning' ? 'Some older transcripts could not be read. Healthy transcripts are still available.' : '',
     };
     let statusInFlight = 0;
