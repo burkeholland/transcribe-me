@@ -3,7 +3,7 @@
 param(
     [switch]$RebuildNative,
     [ValidatePattern('^\d+\.\d+\.\d+([.-][A-Za-z0-9.-]+)?$')]
-    [string]$Version = '0.3.0',
+    [string]$Version = '0.3.1',
     [switch]$Msix,
     [string]$StoreIdentity
 )

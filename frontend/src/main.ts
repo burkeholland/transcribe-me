@@ -53,7 +53,7 @@ app.innerHTML = `
           <ul id="history-list"></ul>
         </section>
         <div class="engine">${chipIcon}<span class="engine-text"><strong>Local Whisper</strong><span id="engine-label" role="status" aria-live="polite">Checking engine</span></span></div>
-        <p class="engine-meta"><span id="model">Whisper base multilingual</span> · <span id="version">v0.3.0</span></p>
+        <p class="engine-meta"><span id="model">Whisper base multilingual</span> · <span id="version">v0.3.1</span></p>
       </nav>
 
       <main class="picker" id="picker">
@@ -644,7 +644,7 @@ async function poll(): Promise<void> {
       ready: 'Running offline',
     };
     text('engine-label', next.setupError ? 'Engine unavailable' : engineLabel[next.runtimeState] || 'Checking engine');
-    text('version', `v${next.version || '0.3.0'}`);
+    text('version', `v${next.version || '0.3.1'}`);
     text('model', next.modelName || 'Whisper base multilingual');
     const serviceError = next.setupError || (next.ready ? next.runtimeError : '');
     el('service-error').hidden = !serviceError;

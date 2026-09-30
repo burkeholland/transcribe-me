@@ -34,7 +34,7 @@ The binaries communicate with TranscribeMe through files and command-line
 arguments, not through a linked proprietary library.
 
 Every generated release has a companion
-`TranscribeMe-0.3.0-native-source.zip` containing the exact FFmpeg source
+`TranscribeMe-0.3.1-native-source.zip` containing the exact FFmpeg source
 archive, Whisper source archive, build scripts, input hashes, and toolchain
 build receipt. Both native source trees are unmodified. The source bundle
 includes the UTF-8 Windows application manifest embedded into the built
@@ -45,7 +45,7 @@ retain these license notices. This is actual corresponding source provision,
 not a promise to locate source later.
 
 The Microsoft Store package carries that same archive inside the package as
-`source\TranscribeMe-0.3.0-native-source.zip`, and the package's `SOURCE.txt`
+`source\TranscribeMe-0.3.1-native-source.zip`, and the package's `SOURCE.txt`
 records its SHA-256. The MSIX packaging script refuses to build unless the
 archive matches its published checksum and records the exact FFmpeg and
 Whisper executables being packaged.
