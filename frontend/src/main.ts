@@ -53,7 +53,7 @@ app.innerHTML = `
           <ul id="history-list"></ul>
         </section>
         <div class="engine">${chipIcon}<span class="engine-text"><strong>Local Whisper</strong><span id="engine-label" role="status" aria-live="polite">Checking engine</span></span></div>
-        <p class="engine-meta"><span id="model">Whisper base multilingual</span> · <span id="version">v0.3.1</span></p>
+        <p class="engine-meta"><span id="model">Whisper base multilingual</span> · <span id="version">v0.3.2</span></p>
       </nav>
 
       <main class="picker" id="picker">
@@ -71,11 +71,21 @@ app.innerHTML = `
           </div>
           <p id="runtime-error" class="runtime-error" role="alert" hidden></p>
         </section>
+        <section id="batch" class="batch" aria-labelledby="batch-title" hidden>
+          <div class="batch-head">
+            <div>
+              <h2 id="batch-title">Transcription batch</h2>
+              <p id="batch-summary"></p>
+            </div>
+            <span id="batch-count" class="batch-count"></span>
+          </div>
+          <ol id="batch-list" class="batch-list"></ol>
+        </section>
         <div class="dropzone" id="dropzone">
           <span class="dropzone-icon">${mediaIcon}</span>
-          <p class="dropzone-title">Drop a video here</p>
+          <p class="dropzone-title">Drop videos here</p>
           <p class="dropzone-hint">or click to browse</p>
-          <button id="choose-file" class="button-primary" type="button" disabled>${folderIcon}<span>Choose Video</span></button>
+          <button id="choose-files" class="button-primary" type="button" disabled>${folderIcon}<span>Choose Videos</span></button>
         </div>
         <p id="supports" class="supports">Supports: MP4, MOV, MKV, AVI, WEBM, M4V</p>
         <div id="language-row" class="language-row">
@@ -163,6 +173,8 @@ function text(id: string, value: string): void {
 const bridge = window.go?.main?.App;
 
 type Head = { name: string; path: string; durationMs: number; size: number; height: number };
+type BatchState = 'queued' | 'current' | 'completed' | 'failed' | 'cancelled';
+type BatchItem = { file: FileInfo; state: BatchState; error: string };
 
 let snapshot: Snapshot | null = null;
 let transcript: Transcript | null = null;
@@ -178,6 +190,10 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 let stopped = false;
 let cancelRequested = false;
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
+let batchItems: BatchItem[] = [];
+let batchLanguage = 'auto';
+let activeBatchJobID = '';
+let handledTerminalJobID = '';
 const posters = new Map<string, string>();
 
 /* ---------- chrome ---------- */
@@ -211,7 +227,7 @@ function toast(message: string, error = false): void {
 /* ---------- state ---------- */
 
 function busy(): boolean {
-  return pending || awaitingStart || isActive(snapshot?.job);
+  return pending || awaitingStart || isActive(snapshot?.job) || batchItems.some(item => item.state === 'queued' || item.state === 'current');
 }
 
 function exportable(): boolean {
@@ -228,7 +244,8 @@ function jobForHead(): Snapshot['job'] {
 function updateControls(): void {
   const locked = busy();
   const unavailable = !bridge || !snapshot?.ready || disconnected;
-  el<HTMLButtonElement>('choose-file').disabled = locked || unavailable;
+  el<HTMLButtonElement>('choose-files').disabled = locked || unavailable;
+  el<HTMLSelectElement>('language').disabled = locked || unavailable;
   el('dropzone').classList.toggle('disabled', locked || unavailable);
   const running = awaitingStart || isActive(snapshot?.job);
   el('cancel').hidden = !running;
@@ -237,7 +254,8 @@ function updateControls(): void {
   for (const button of el('history-list').querySelectorAll('button')) button.disabled = locked || disconnected;
   const installing = snapshot?.runtimeState === 'downloading' || snapshot?.runtimeState === 'installing';
   el<HTMLButtonElement>('install-runtime').disabled = pending || installing || disconnected;
-  text('cancel', cancelRequested ? 'Cancelling…' : 'Cancel');
+  const batchRunning = batchItems.length > 1 && batchItems.some(item => item.state === 'queued' || item.state === 'current');
+  text('cancel', cancelRequested ? 'Cancelling…' : batchRunning ? 'Cancel batch' : 'Cancel');
 }
 
 async function action(work: () => Promise<void>): Promise<void> {
@@ -415,7 +433,40 @@ function clearResult(): void {
 
 /* ---------- file intake ---------- */
 
-async function begin(file: FileInfo): Promise<void> {
+function renderBatch(): void {
+  const element = el('batch');
+  element.hidden = batchItems.length < 2;
+  if (element.hidden) return;
+  const completed = batchItems.filter(item => item.state === 'completed').length;
+  const failed = batchItems.filter(item => item.state === 'failed').length;
+  const cancelled = batchItems.filter(item => item.state === 'cancelled').length;
+  const finished = completed + failed + cancelled;
+  const running = batchItems.some(item => item.state === 'queued' || item.state === 'current');
+  text('batch-summary', running ? `${finished} of ${batchItems.length} finished` : failed ? `${completed} saved, ${failed} failed` : cancelled ? `${completed} saved, ${cancelled} cancelled` : `${completed} transcripts saved`);
+  text('batch-count', `${finished}/${batchItems.length}`);
+
+  const labels: Record<BatchState, string> = {
+    queued: 'Waiting', current: 'Transcribing', completed: 'Done', failed: 'Failed', cancelled: 'Cancelled',
+  };
+  const fragment = document.createDocumentFragment();
+  for (const item of batchItems) {
+    const li = document.createElement('li');
+    li.className = `batch-item batch-${item.state}`;
+    const name = document.createElement('span');
+    name.className = 'batch-name';
+    name.textContent = item.file.name;
+    name.title = item.file.path;
+    const status = document.createElement('span');
+    status.className = 'batch-status';
+    status.textContent = labels[item.state];
+    if (item.error) status.title = item.error;
+    li.append(name, status);
+    fragment.append(li);
+  }
+  el('batch-list').replaceChildren(fragment);
+}
+
+async function begin(file: FileInfo, languageCode: string): Promise<void> {
   if (!bridge) return;
   clearResult();
   setHead({ name: file.name, path: file.path, durationMs: file.durationMs, size: file.size, height: file.height || 0 }, true);
@@ -423,32 +474,74 @@ async function begin(file: FileInfo): Promise<void> {
   startPreviousJobID = snapshot?.job?.id || '';
   cancelRequested = false;
   loadedCompletion = '';
+  handledTerminalJobID = '';
   updateControls();
   try {
-    await bridge.StartTranscription(file.path, el<HTMLSelectElement>('language').value);
+    await bridge.StartTranscription(file.path, languageCode);
   } catch (error) {
     awaitingStart = false;
     throw error;
   }
 }
 
-async function openPath(path: string): Promise<void> {
-  if (busy() || !bridge || !snapshot?.ready || disconnected) return;
-  const cleaned = path.trim();
-  if (!cleaned) return;
-  await action(async () => begin(await bridge.InspectFile(cleaned)));
+async function startNextBatchFile(): Promise<void> {
+  while (true) {
+    const item = batchItems.find(candidate => candidate.state === 'queued');
+    if (!item) {
+      renderBatch();
+      updateControls();
+      const completed = batchItems.filter(candidate => candidate.state === 'completed').length;
+      const failed = batchItems.filter(candidate => candidate.state === 'failed').length;
+      if (batchItems.length > 1 && !cancelRequested) {
+        toast(failed ? `Batch finished. ${completed} saved, ${failed} failed.` : `Batch complete. ${completed} transcripts saved.`, failed > 0);
+      }
+      return;
+    }
+    item.state = 'current';
+    activeBatchJobID = '';
+    renderBatch();
+    try {
+      await begin(item.file, batchLanguage);
+      return;
+    } catch (error) {
+      item.state = 'failed';
+      item.error = errorText(error);
+      toast(`${item.file.name}: ${item.error}`, true);
+      renderBatch();
+    }
+  }
 }
 
-el('choose-file').addEventListener('click', () => {
+async function beginBatch(files: FileInfo[]): Promise<void> {
+  const unique = files.filter((file, index) => files.findIndex(candidate => candidate.path.toLocaleLowerCase() === file.path.toLocaleLowerCase()) === index);
+  if (unique.length === 0) return;
+  batchLanguage = el<HTMLSelectElement>('language').value;
+  batchItems = unique.map(file => ({ file, state: 'queued', error: '' }));
+  renderBatch();
+  await startNextBatchFile();
+}
+
+async function openPaths(paths: string[]): Promise<void> {
+  if (busy() || !bridge || !snapshot?.ready || disconnected) return;
+  const cleaned = paths.map(path => path.trim()).filter(Boolean);
+  if (cleaned.length === 0) return;
+  await action(async () => {
+    const files: FileInfo[] = [];
+    for (const path of cleaned) files.push(await bridge.InspectFile(path));
+    await beginBatch(files);
+  });
+}
+
+el('choose-files').addEventListener('click', () => {
   if (busy() || !bridge) return;
   void action(async () => {
-    const file = await bridge.ChooseFile();
-    if (file) await begin(file);
+    const files = await bridge.ChooseFiles();
+    await beginBatch(files || []);
   });
 });
 el('dropzone').addEventListener('click', event => {
-  if (event.target === el('choose-file') || (event.target as HTMLElement).closest('#choose-file')) return;
-  el('choose-file').click();
+  if (event.target === el('choose-files') || (event.target as HTMLElement).closest('#choose-files')) return;
+  el('choose-files').click();
 });
 
 el('install-runtime').addEventListener('click', () => {
@@ -460,8 +553,12 @@ el('install-runtime').addEventListener('click', () => {
 });
 
 el('cancel').addEventListener('click', () => {
-  if (!bridge || !isActive(snapshot?.job) || cancelRequested || pending) return;
+  if (!bridge || (!awaitingStart && !isActive(snapshot?.job)) || cancelRequested || pending) return;
   void action(async () => {
+    for (const item of batchItems) {
+      if (item.state === 'queued') item.state = 'cancelled';
+    }
+    renderBatch();
     await bridge.Cancel();
     cancelRequested = true;
   });
@@ -634,7 +731,10 @@ async function poll(): Promise<void> {
     if (stopped) return;
     disconnected = false;
     snapshot = next;
-    if (awaitingStart && next.job && next.job.id !== startPreviousJobID) awaitingStart = false;
+    if (awaitingStart && next.job && next.job.id !== startPreviousJobID) {
+      awaitingStart = false;
+      activeBatchJobID = next.job.id;
+    }
     const engineLabel: Record<string, string> = {
       checking: 'Checking engine',
       required: 'Models required',
@@ -644,7 +744,7 @@ async function poll(): Promise<void> {
       ready: 'Running offline',
     };
     text('engine-label', next.setupError ? 'Engine unavailable' : engineLabel[next.runtimeState] || 'Checking engine');
-    text('version', `v${next.version || '0.3.1'}`);
+    text('version', `v${next.version || '0.3.2'}`);
     text('model', next.modelName || 'Whisper base multilingual');
     const serviceError = next.setupError || (next.ready ? next.runtimeError : '');
     el('service-error').hidden = !serviceError;
@@ -654,15 +754,29 @@ async function poll(): Promise<void> {
     renderHistory();
     updateControls();
     const job = next.job;
-    if (job?.state === 'completed' && job.transcriptID && loadedCompletion !== job.id && !awaitingStart && !pending) {
+    const terminal = job && !isActive(job);
+    if (terminal && job.id !== handledTerminalJobID && !awaitingStart && !pending) {
       pending = true;
       updateControls();
       try {
-        await loadTranscript(job.transcriptID);
-        loadedCompletion = job.id;
-      } catch (error) {
-        toast(`Could not open the completed transcript: ${errorText(error)} Open it from Recent to retry.`, true);
-        loadedCompletion = job.id;
+        const item = batchItems.find(candidate => candidate.state === 'current');
+        if (job.state === 'completed' && job.transcriptID && loadedCompletion !== job.id) {
+          try {
+            await loadTranscript(job.transcriptID);
+          } catch (error) {
+            toast(`Could not open the completed transcript: ${errorText(error)} Open it from Recent to retry.`, true);
+          }
+          loadedCompletion = job.id;
+        }
+        handledTerminalJobID = job.id;
+        if (item && activeBatchJobID === job.id) {
+          item.state = job.state === 'completed' ? 'completed' : job.state === 'cancelled' ? 'cancelled' : 'failed';
+          item.error = job.error || '';
+          activeBatchJobID = '';
+          if (job.state === 'failed' && batchItems.length > 1) toast(`${item.file.name}: ${job.error || 'Transcription failed.'}`, true);
+          renderBatch();
+          if (job.state !== 'cancelled') await startNextBatchFile();
+        }
       } finally {
         pending = false;
         updateControls();
@@ -720,11 +834,7 @@ if (!bridge) {
   el('window-buttons').hidden = false;
   window.runtime?.OnFileDrop?.((_x, _y, paths) => {
     if (busy()) return;
-    if (paths.length !== 1) {
-      toast('Drop one video or audio file at a time.', true);
-      return;
-    }
-    void openPath(paths[0]);
+    void openPaths(paths);
   }, false);  updateControls();
   void poll();
 }

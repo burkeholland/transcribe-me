@@ -14,6 +14,7 @@ async function servePoster(page: Page) {
 async function desktop(page: Page, scenario = 'normal') {
   await page.addInitScript(scenario => {
     const info: FileInfo = { name: 'Recording.mp4', path: 'C:\\Videos\\Recording.mp4', size: 10_485_760, durationMs: 125_000, height: 1080 };
+    const secondInfo: FileInfo = { name: 'Interview.mov', path: 'C:\\Videos\\Interview.mov', size: 5_242_880, durationMs: 64_000, height: 720 };
     const transcript: Transcript = {
       id: 'saved-1', fileName: info.name, createdAt: '2026-09-21T12:00:00Z', language: 'en', durationMs: info.durationMs, wordCount: 12,
       text: 'Here is a clear thought. Keep the original recording for comparison.',
@@ -41,11 +42,12 @@ async function desktop(page: Page, scenario = 'normal') {
       runtimeDownloadedBytes: scenario === 'runtime-downloading' ? 74_418_282 : 0,
       runtimeDownloadTotalBytes: scenario === 'runtime-downloading' ? 148_836_563 : 0,
       runtimeTotalBytes: 148_836_563,
-      modelName: 'Whisper base multilingual', version: '0.3.1', job: null, history: [transcript],
+      modelName: 'Whisper base multilingual', version: '0.3.2', job: null, history: [transcript],
       historyWarning: scenario === 'history-warning' ? 'Some older transcripts could not be read. Healthy transcripts are still available.' : '',
     };
     let statusInFlight = 0;
     let maximumStatusInFlight = 0;
+    let jobCount = 0;
     const calls: string[] = [];
     let drop: ((x: number, y: number, paths: string[]) => void) | undefined;
     const controls = {
@@ -79,15 +81,16 @@ async function desktop(page: Page, scenario = 'normal') {
         snapshot.runtimeState = 'ready';
         snapshot.runtimeProgress = 100;
       },
-      ChooseFile: async () => scenario === 'cancel-choose' ? null : info,
+      ChooseFiles: async () => scenario === 'cancel-choose' ? [] : scenario === 'batch' ? [info, secondInfo] : [info],
       InspectFile: async path => {
         calls.push(`inspect:${path}`);
         if (scenario === 'inspect-error') throw new Error('This file does not contain an audio stream.');
-        return info;
+        return path === secondInfo.path ? secondInfo : info;
       },
       StartTranscription: async (path, language) => {
         calls.push(`start:${path}:${language}`);
-        snapshot.job = { id: 'job-1', state: 'transcribing', progress: 32, message: 'Processing locally.', fileName: info.name, error: '', transcriptID: '' };
+        jobCount++;
+        snapshot.job = { id: `job-${jobCount}`, state: 'transcribing', progress: 32, message: 'Processing locally.', fileName: path === secondInfo.path ? secondInfo.name : info.name, error: '', transcriptID: '' };
       },
       Cancel: async () => { calls.push('cancel'); if (snapshot.job) snapshot.job.state = 'cancelled'; },
       GetTranscript: async id => { calls.push(`get:${id}`); return structuredClone(transcript); },
@@ -109,7 +112,7 @@ async function desktop(page: Page, scenario = 'normal') {
     await expect(page.locator('#history-count')).toHaveText('1');
     await expect(page.locator('#engine-label')).toHaveText('Checking engine');
   } else {
-    await expect(page.getByRole('button', { name: 'Choose Video' })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Choose Videos' })).toBeEnabled();
   }
 }
 
@@ -125,7 +128,7 @@ async function drop(page: Page, paths: string[]) {
   await page.evaluate(paths => (window as unknown as { __test: { drop: (paths: string[]) => void } }).__test.drop(paths), paths);
 }
 
-async function startJob(page: Page) {  await page.getByRole('button', { name: 'Choose Video' }).click();
+async function startJob(page: Page) {  await page.getByRole('button', { name: 'Choose Videos' }).click();
   await expect(page.getByText('Transcribing locally', { exact: true })).toBeVisible();
 }
 
@@ -137,7 +140,7 @@ async function download(page: Page, item: string) {
 test('ordinary browser has no simulated desktop functionality', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Desktop app required' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Choose Video' })).not.toBeVisible();
+  await expect(page.getByRole('button', { name: 'Choose Videos' })).not.toBeVisible();
   await expect(page.locator('script[src^="http"]')).toHaveCount(0);
 });
 
@@ -145,13 +148,13 @@ test('choosing a video starts it immediately and every download format works', a
   await desktop(page);
   await servePoster(page);
   await page.getByLabel('Spoken language').selectOption('es');
-  await page.getByRole('button', { name: 'Choose Video' }).click();
+  await page.getByRole('button', { name: 'Choose Videos' }).click();
 
   await expect(page.locator('#reader-title')).toHaveText('Recording.mp4');
   await expect(page.locator('#reader-meta')).toHaveText('02:05 • 1080p • 10.0 MB');
   await expect(page.locator('#poster img')).toHaveAttribute('src', /^data:image\/jpeg/);
   await expect(page.getByText('Transcribing locally', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Choose Video' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Choose Videos' })).toBeDisabled();
   await expect(page.getByRole('button', { name: /Recording.mp4/ })).toBeDisabled();
 
   await control(page, 'complete');
@@ -194,7 +197,7 @@ test('inspection errors are visible and never start a job', async ({ page }) => 
 
 test('setup failure blocks new work but still allows saved transcript review', async ({ page }) => {
   await desktop(page, 'setup-error');
-  await expect(page.getByRole('button', { name: 'Choose Video' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Choose Videos' })).toBeDisabled();
   await page.locator('.history-item').click();
   await expect(page.locator('#reader-title')).toHaveText('Recording.mp4');
   await expect(page.getByText('Transcription complete', { exact: true })).toBeVisible();
@@ -210,15 +213,15 @@ test('history corruption warning persists separately without blocking healthy tr
   await expect(page.locator('#toast')).toHaveText('Transcript copied to the clipboard.');
   await page.waitForTimeout(1700);
   await expect(warning).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Choose Video' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Choose Videos' })).toBeEnabled();
 });
 
 test('initial model verification is neutral and automatically becomes ready', async ({ page }) => {
   await desktop(page, 'checking');
-  await expect(page.getByRole('button', { name: 'Choose Video' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Choose Videos' })).toBeDisabled();
   await expect(page.locator('#service-error')).not.toBeVisible();
   await control(page, 'finishSetup');
-  await expect(page.getByRole('button', { name: 'Choose Video' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Choose Videos' })).toBeEnabled();
   await expect(page.locator('#engine-label')).toHaveText('Running offline');
 });
 
@@ -227,9 +230,9 @@ test('missing models prompt for a verified first-run download', async ({ page })
   await expect(page.getByRole('heading', { name: 'Download the speech models' })).toBeVisible();
   await expect(page.getByText(/Whisper and FFmpeg are included/)).toBeVisible();
   await expect(page.locator('#runtime-size')).toHaveText('Downloads about 141.9 MB once.');
-  await expect(page.getByRole('button', { name: 'Choose Video' })).not.toBeVisible();
+  await expect(page.getByRole('button', { name: 'Choose Videos' })).not.toBeVisible();
   await page.getByRole('button', { name: 'Download models' }).click();
-  await expect(page.getByRole('button', { name: 'Choose Video' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Choose Videos' })).toBeEnabled();
   await expect(page.locator('#engine-label')).toHaveText('Running offline');
   expect(await calls(page)).toContain('install-models');
 });
@@ -244,7 +247,7 @@ test('model download progress uses the pinned model sizes', async ({ page }) => 
 test('runtime cleanup warnings stay visible without blocking transcription', async ({ page }) => {
   await desktop(page, 'runtime-cleanup-warning');
   await expect(page.locator('#service-error')).toHaveText('Old engine setup files could not be removed.');
-  await expect(page.getByRole('button', { name: 'Choose Video' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Choose Videos' })).toBeEnabled();
   await expect(page.locator('#engine-label')).toHaveText('Running offline');
 });
 
@@ -267,13 +270,13 @@ test('cancel releases the workflow and failed jobs explain the problem', async (
   await startJob(page);
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(page.getByText('Transcription cancelled', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Choose Video' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Choose Videos' })).toBeEnabled();
   await page.reload();
   await startJob(page);
   await control(page, 'fail');
   await expect(page.getByText('Transcription failed', { exact: true })).toBeVisible();
   await expect(page.getByRole('alert')).toHaveText('The audio decoder could not read this recording.');
-  await expect(page.getByRole('button', { name: 'Choose Video' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Choose Videos' })).toBeEnabled();
 });
 
 test('history handles literal HTML safely and preserves find focus during polling', async ({ page }) => {
@@ -321,7 +324,7 @@ test('native export cancellation is not claimed as a saved file', async ({ page 
 
 test('native chooser cancellation leaves the reader empty', async ({ page }) => {
   await desktop(page, 'cancel-choose');
-  await page.getByRole('button', { name: 'Choose Video' }).click();
+  await page.getByRole('button', { name: 'Choose Videos' }).click();
   await expect(page.locator('#reader-head')).not.toBeVisible();
   await expect(page.locator('#empty-state')).toBeVisible();
 });
@@ -333,11 +336,58 @@ test('real runtime drop hook starts a single native path', async ({ page }) => {
   await expect(page.getByText('Transcribing locally', { exact: true })).toBeVisible();
 });
 
-test('dropping more than one file is refused', async ({ page }) => {
+test('choosing multiple files creates a batch and transcribes each file in order', async ({ page }) => {
+  await desktop(page, 'batch');
+  await page.getByRole('button', { name: 'Choose Videos' }).click();
+  await expect(page.locator('#batch-list li')).toHaveCount(2);
+  await expect(page.locator('#batch-list li').nth(0)).toContainText('Transcribing');
+  await expect(page.locator('#batch-list li').nth(1)).toContainText('Waiting');
+  await page.screenshot({ path: test.info().outputPath('transcription-batch.png') });
+
+  await control(page, 'complete');
+  await expect(page.locator('#reader-title')).toHaveText('Interview.mov');
+  await expect(page.locator('#batch-list li').nth(0)).toContainText('Done');
+  await expect(page.locator('#batch-list li').nth(1)).toContainText('Transcribing');
+
+  await control(page, 'complete');
+  await expect(page.locator('#batch-summary')).toHaveText('2 transcripts saved');
+  await expect(page.getByRole('button', { name: 'Choose Videos' })).toBeEnabled();
+  expect(await calls(page)).toEqual(expect.arrayContaining([
+    'start:C:\\Videos\\Recording.mp4:auto',
+    'start:C:\\Videos\\Interview.mov:auto',
+  ]));
+});
+
+test('a failed file does not stop the rest of the batch', async ({ page }) => {
+  await desktop(page, 'batch');
+  await page.getByRole('button', { name: 'Choose Videos' }).click();
+  await control(page, 'fail');
+  await expect(page.locator('#reader-title')).toHaveText('Interview.mov');
+  await expect(page.locator('#batch-list li').nth(0)).toContainText('Failed');
+  await expect(page.locator('#batch-list li').nth(1)).toContainText('Transcribing');
+  expect(await calls(page)).toContain('start:C:\\Videos\\Interview.mov:auto');
+});
+
+test('cancelling a batch cancels the current file and every file still waiting', async ({ page }) => {
+  await desktop(page, 'batch');
+  await page.getByRole('button', { name: 'Choose Videos' }).click();
+  await page.getByRole('button', { name: 'Cancel batch' }).click();
+  await expect(page.locator('#batch-list li').nth(0)).toContainText('Cancelled');
+  await expect(page.locator('#batch-list li').nth(1)).toContainText('Cancelled');
+  await expect(page.getByRole('button', { name: 'Choose Videos' })).toBeEnabled();
+  expect(await calls(page)).not.toContain('start:C:\\Videos\\Interview.mov:auto');
+});
+
+test('dropping multiple files creates the same ordered batch', async ({ page }) => {
   await desktop(page);
-  await drop(page, ['a.mp4', 'b.mp4']);
-  await expect(page.getByRole('alert')).toHaveText('Drop one video or audio file at a time.');
-  await expect(page.locator('#reader-head')).not.toBeVisible();
+  await drop(page, ['C:\\Videos\\Recording.mp4', 'C:\\Videos\\Interview.mov']);
+  await expect(page.locator('#batch-list li')).toHaveCount(2);
+  await expect(page.locator('#reader-title')).toHaveText('Recording.mp4');
+  expect(await calls(page)).toEqual(expect.arrayContaining([
+    'inspect:C:\\Videos\\Recording.mp4',
+    'inspect:C:\\Videos\\Interview.mov',
+    'start:C:\\Videos\\Recording.mp4:auto',
+  ]));
 });
 
 test('status polling is serial even when the backend takes longer than 800ms', async ({ page }) => {
@@ -351,9 +401,9 @@ test('lost native connection is visible and recovers without reloading', async (
   await desktop(page);
   await page.evaluate(() => { (window as unknown as { __test: { connectionError: boolean } }).__test.connectionError = true; });
   await expect(page.getByRole('alert')).toContainText('Cannot reach the local engine');
-  await expect(page.getByRole('button', { name: 'Choose Video' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Choose Videos' })).toBeDisabled();
   await page.evaluate(() => { (window as unknown as { __test: { connectionError: boolean } }).__test.connectionError = false; });
-  await expect(page.getByRole('button', { name: 'Choose Video' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Choose Videos' })).toBeEnabled();
   await expect(page.locator('#service-error')).not.toBeVisible();
 });
 
