@@ -2,12 +2,12 @@
   "files": [
     {
       "path": "runtime/ffmpeg/bin/ffmpeg.exe",
-      "sha256": "39cedf5c0a7c65d1872985382934faf45d286447258beb7c801458638d9be9f7",
+      "sha256": "d786f1e7807a6debeaae717da411c7045a146f8d8e9f533a53c5520d92581091",
       "size": 3942414
     },
     {
       "path": "runtime/ffmpeg/bin/ffprobe.exe",
-      "sha256": "afe985097214a1bca1f188aef237c15672a51276fa21281abb064e7795910daf",
+      "sha256": "2241e45ea88fcbe1ae5648a0590cb119e26eb3a4cc2ccfbb6cf0cc21624cc73f",
       "size": 3713550
     },
     {
@@ -24,8 +24,8 @@
     },
     {
       "path": "runtime/whisper/whisper-cli.exe",
-      "sha256": "e3f92ed8d25fcbc2572c0685c7ce3e8c89cb8668a2c6043ca310dd0945457252",
-      "size": 2192896
+      "sha256": "459bf2591a1922b84c799197961e9ddc31b89dc920994031e5c40146156fcfae",
+      "size": 2193408
     }
   ]
 }
