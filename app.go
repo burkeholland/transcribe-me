@@ -87,23 +87,27 @@ func (a *App) InstallModels() error {
 	return a.service.InstallModels(a.ctx)
 }
 
-func (a *App) ChooseFile() (*transcribe.FileInfo, error) {
+func (a *App) ChooseFiles() ([]transcribe.FileInfo, error) {
 	a.dialogMu.Lock()
-	path, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
-		Title: "Choose a video or audio file",
+	paths, err := runtime.OpenMultipleFilesDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Choose video or audio files",
 		Filters: []runtime.FileFilter{
 			{DisplayName: "Video and audio", Pattern: "*.mp4;*.m4v;*.mov;*.mkv;*.webm;*.avi;*.wmv;*.mpeg;*.mpg;*.ts;*.mp3;*.wav;*.m4a;*.aac;*.flac;*.ogg;*.opus;*.wma"},
 		},
 	})
 	a.dialogMu.Unlock()
-	if err != nil || path == "" {
+	if err != nil || len(paths) == 0 {
 		return nil, err
 	}
-	info, err := a.InspectFile(path)
-	if err != nil {
-		return nil, err
+	files := make([]transcribe.FileInfo, 0, len(paths))
+	for _, path := range paths {
+		info, inspectErr := a.InspectFile(path)
+		if inspectErr != nil {
+			return nil, fmt.Errorf("%s: %w", filepath.Base(path), inspectErr)
+		}
+		files = append(files, info)
 	}
-	return &info, nil
+	return files, nil
 }
 
 func (a *App) InspectFile(path string) (transcribe.FileInfo, error) {
